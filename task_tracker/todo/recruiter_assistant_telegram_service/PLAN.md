@@ -152,7 +152,7 @@ LLM-агент-помощник — в бэклог v2 (вернём если п
 - [x] step_2_create_new_repo.md — Фаза A done: git init, код скопирован в core/, импорты починены, load_dotenv вынесен в entry points, smoke test пройден, запушено на GitHub. Фаза B done: 05_refind/CLAUDE.md обновлён, smoke test 05_refind пройден
 
 ### Шаг 3: SQLite-схема
-- [ ] step_3_sqlite_schema.md — схема (без Notion-полей, без agent_invocations), миграции, `db/client.py` с CRUD, WAL, thread-safety, cleanup_stale_sessions, `--init` CLI
+- [x] step_3_sqlite_schema.md — схема (без Notion-полей, без agent_invocations), миграции, `db/client.py` с CRUD, WAL, thread-safety, cleanup_stale_sessions, `--init`/`--migrate` CLI, 21 юнит-тест
 
 ### Шаг 4: Bot scaffold + state machine
 - [ ] step_4_bot_scaffold.md — структура `bot/`, state machine (без WAITING_BRIEF), заглушки пайплайнов, локальный polling

@@ -1,6 +1,6 @@
 # Step 3: SQLite-схема и DB-клиент
 
-> Статус: pending
+> Статус: done
 > Зависит от: step_2 (новый репо существует)
 
 ## Цель
@@ -248,14 +248,20 @@ if __name__ == "__main__":
 
 ## Критерии готовности
 
-- [ ] `db/schema.sql` создан, открывается через `sqlite3 file.db < schema.sql` без ошибок
-- [ ] Схема **не содержит** Notion-полей (`*_database_id`, `notion_page_*`) и таблицы `agent_invocations`
-- [ ] `db/client.py` реализован с API выше
-- [ ] При открытии БД выставляется `PRAGMA journal_mode=WAL`, проверено: `sqlite3 file.db "PRAGMA journal_mode;"` → `wal`
-- [ ] DB-клиент корректен при параллельных вызовах из asyncio (тест: 10 одновременных `insert_candidates` через `asyncio.gather`)
-- [ ] `python -m db.client --init` создаёт БД из пустого `data/` за один вызов
-- [ ] `cleanup_stale_sessions(older_than_minutes=30)` помечает зависшие сессии как error
-- [ ] `get_active_session(user_id, pipeline_type='vacancy_to_candidates')` фильтрует по типу
-- [ ] Юнит-тесты: создать юзера, сессию, run, кандидатов; dedup-запрос; cleanup; thread-safety
-- [ ] `data/.gitkeep` есть, `data/recruiter_assistant.db` в `.gitignore`
-- [ ] README обновлён: как инициализировать БД, где лежит, WAL режим
+- [x] `db/schema.sql` создан, открывается через `executescript` без ошибок (проверено для schema.sql и 001_initial.sql)
+- [x] Схема **не содержит** Notion-полей (`*_database_id`, `notion_page_*`) и таблицы `agent_invocations`
+- [x] `db/client.py` реализован с API выше (+ guardrail на `**fields` колонки)
+- [x] При открытии БД выставляется `PRAGMA journal_mode=WAL`, проверено: `PRAGMA journal_mode` → `wal`
+- [x] DB-клиент корректен при параллельных вызовах из asyncio (тест `test_concurrent_inserts_via_asyncio_gather`: 10 `insert_candidates` через `asyncio.gather` + `asyncio.to_thread`)
+- [x] `python -m db.client --init` создаёт БД из пустого `data/` за один вызов
+- [x] `cleanup_stale_sessions(older_than_minutes=30)` помечает зависшие сессии как error (тест `test_cleanup_stale_sessions`)
+- [x] `get_active_session(user_id, pipeline_type='vacancy_to_candidates')` фильтрует по типу (тест `test_get_active_session_filters_by_pipeline`)
+- [x] Юнит-тесты: 21 тест в `tests/test_db_client.py` — user/session/run/candidates, dedup, cleanup, guardrail, thread-safety. Все зелёные
+- [x] `data/.gitkeep` есть и tracked, `data/*.db` в `.gitignore` (проверено `git check-ignore`)
+- [x] README обновлён: секция "База данных" — init/migrate, WAL, где лежит файл
+
+## Заметки по реализации
+
+- `001_initial.sql` — копия `schema.sql` (идентичный DDL, все `IF NOT EXISTS`). Fresh install через `schema.sql` и через миграцию дают одинаковый результат. `initialize_from_schema()` сразу помечает все миграции применёнными → последующий `--migrate` no-op.
+- CHECK на `ai_status`: вместо `IN ('pass','fail','uncertain', NULL)` из плана написано `... IN (...) OR ai_status IS NULL` — корректнее (в SQLite `x IN (...,NULL)` для несовпадения даёт NULL, что в CHECK «проходит» случайно). Поведение то же — NULL разрешён.
+- `update_session`/`update_run` принимают `**fields` → добавлен allow-list колонок (`_guard_columns`): неизвестное имя → `ValueError`, а не битый SQL.

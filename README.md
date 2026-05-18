@@ -28,9 +28,10 @@ recruiter_assistant/
 │   ├── PIPELINE_vacancy_to_candidates.md
 │   └── PIPELINE_cv_to_jobs.md
 ├── bot/            # Telegram-обёртка (в разработке)
-├── db/             # SQLite-слой (в разработке)
+├── db/             # SQLite-слой: schema.sql, migrations/, client.py
 ├── config/         # whitelist.json (gitignored)
 ├── data/           # БД и артефакты прогонов (gitignored)
+├── tests/          # юнит-тесты
 ├── .env.example
 └── requirements.txt
 ```
@@ -66,6 +67,24 @@ python -m core.candidate_screener.cli.run_jobs --candidate <name> \
 
 Подробности пайплайнов — в [core/PIPELINE_vacancy_to_candidates.md](core/PIPELINE_vacancy_to_candidates.md)
 и [core/PIPELINE_cv_to_jobs.md](core/PIPELINE_cv_to_jobs.md).
+
+## База данных
+
+SQLite хранит состояние сессий и результаты прогонов (пользователи, сессии,
+runs, найденные кандидаты/вакансии). Тяжёлые артефакты (входные файлы, отчёты,
+сырые Apify-дампы) лежат файлами на диске в `data/`, в БД — только пути.
+
+Файл БД: `data/recruiter_assistant.db` (gitignored, путь через `DB_PATH`).
+Открывается в режиме **WAL** — конкурентные чтения + один писатель без
+`database is locked` (бот async, несколько юзеров параллельно).
+
+```bash
+python -m db.client --init      # создать БД из db/schema.sql
+python -m db.client --migrate   # применить недостающие миграции из db/migrations/
+```
+
+Схема — `db/schema.sql`. Миграции — `db/migrations/NNN_*.sql`, отслеживаются
+через таблицу `_migrations`. Без alembic, без ORM — только `sqlite3` stdlib.
 
 ## Telegram-бот
 
