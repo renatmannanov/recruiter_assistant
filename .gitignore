@@ -1,0 +1,22 @@
+# Data and secrets
+data/*
+!data/.gitkeep
+.env
+.env.production
+*.db
+*.db-shm
+*.db-wal
+
+# Whitelist with real telegram_user_id — НИКОГДА в git
+config/whitelist.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/

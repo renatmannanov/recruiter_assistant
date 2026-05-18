@@ -1,0 +1,8 @@
+{
+  "users": [
+    {
+      "telegram_user_id": "<INT — telegram user id, см. /start у @userinfobot>",
+      "display_name": "<friendly name>"
+    }
+  ]
+}
