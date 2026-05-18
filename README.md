@@ -88,8 +88,29 @@ python -m db.client --migrate   # применить недостающие ми
 
 ## Telegram-бот
 
-В разработке. План — `task_tracker/todo/recruiter_assistant_telegram_service/PLAN.md`.
+Каркас бота — детерминированная state-машина (без LLM на роутинге сообщений).
 
 ```bash
-# python -m bot.main   # заглушка, появится на step_4
+python -m bot.main      # запуск в режиме long polling
+```
+
+Требует в `.env`: `TELEGRAM_BOT_TOKEN`, `DB_PATH`, `WHITELIST_PATH`. При первом
+запуске схема БД создаётся автоматически. Доступ — по whitelist
+(`config/whitelist.json`, gitignored).
+
+Команды бота: `/start` `/help` `/refind_vacancy` `/refind_candidate`
+`/cancel` `/status`.
+
+Флоу: команда → пришли вакансию/CV (текст, .txt/.md, опционально +brief
+2-м файлом) → бот генерит boolean → подтверди `ок` или пришли правку →
+прогон в фоне → отчёт `.md` файлом.
+
+> step_4: пайплайны — заглушки. Реальная генерация boolean и прогон
+> подключаются на step_5 (vacancy→candidates) и step_6 (cv→jobs).
+> План — `task_tracker/todo/recruiter_assistant_telegram_service/PLAN.md`.
+
+## Тесты
+
+```bash
+python -m pytest tests/ -q
 ```

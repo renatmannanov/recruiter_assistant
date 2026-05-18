@@ -155,7 +155,7 @@ LLM-агент-помощник — в бэклог v2 (вернём если п
 - [x] step_3_sqlite_schema.md — схема (без Notion-полей, без agent_invocations), миграции, `db/client.py` с CRUD, WAL, thread-safety, cleanup_stale_sessions, `--init`/`--migrate` CLI, 21 юнит-тест
 
 ### Шаг 4: Bot scaffold + state machine
-- [ ] step_4_bot_scaffold.md — структура `bot/`, state machine (без WAITING_BRIEF), заглушки пайплайнов, локальный polling
+- [x] step_4_bot_scaffold.md — структура `bot/` (7 модулей), state machine (без WAITING_BRIEF), заглушки пайплайнов, polling. 82 юнит-теста, живой polling-тест пройден
 
 ### Шаг 5: Интеграция с пайплайнами (vacancy → candidates)
 - [ ] step_5_vacancy_pipeline.md — extractors (1-2 файла), обёртка над `boolean_generator`, обёртка над `discover` + `run_local`, SQLite-dedup, отдача report.md в TG
@@ -219,3 +219,8 @@ LLM-агент-помощник — в бэклог v2 (вернём если п
 - Аналитика по runs (cost, duration, success rate)
 - Партиционирование БД / миграция артефактов в отдельный storage
 - Интеграция с whitelist hub'а, регистрация в `bots_registry.json`
+- Миграция SQLite → общий Postgres на Mac mini. В v1 SQLite оптимален
+  (whitelist-юзеры, редкие записи, конкурентность решена WAL). Смысл появится
+  когда придут аналитика по многим юзерам, веб-интерфейс, рост числа юзеров
+  или cross-matching с тяжёлыми JOIN'ами. `db/client.py` спроектирован так,
+  что замена локализована в одном модуле.

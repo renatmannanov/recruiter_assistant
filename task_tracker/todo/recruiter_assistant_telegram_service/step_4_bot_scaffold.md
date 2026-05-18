@@ -1,13 +1,13 @@
 # Step 4: Bot scaffold + state machine
 
-> Статус: pending
+> Статус: done
 > Зависит от: step_3 (DB готова). step_0 RESOLVED — hub в архитектуре не участвует.
 
 ## Предусловия
 
-- [ ] **Dev Telegram bot создан** через [@BotFather](https://t.me/BotFather): `/newbot` → имя → username → токен в `.env` как `TELEGRAM_BOT_TOKEN`. Это **dev-бот** для локальной разработки, отдельный от production (production создаётся на step_8).
-- [ ] Telegram user ID Рената (основной аккаунт) = **423915315**, вписан в `config/whitelist.json` локально.
-- [ ] (Опционально) Тестовый Telegram user ID для второго аккаунта (для теста изоляции в step_9).
+- [x] **Dev Telegram bot создан** — `@rm_mini_recruiter_assistant_bot`, токен в `.env` как `TELEGRAM_BOT_TOKEN`. Dev-бот для локальной разработки (production создаётся на step_8).
+- [x] Telegram user ID Рената (основной аккаунт) = **423915315**, вписан в `config/whitelist.json` локально.
+- [ ] (Опционально) Тестовый Telegram user ID для второго аккаунта — для теста изоляции в step_9, на этом шаге не нужен.
 
 ## Цель
 
@@ -233,16 +233,24 @@ APIFY_AI_TOKEN=apify_api_...
 
 ## Критерии готовности
 
-- [ ] `bot/` структура создана (без agent.py / agent_tools.py / tracking.py / notion_writer.py)
-- [ ] State machine реализована с тестами на переходы (нет состояния WAITING_BRIEF)
-- [ ] Auth работает (whitelisted пускается, не-whitelisted получает отказ)
-- [ ] Router в handlers.py: правильно роутит по таблице "как обрабатываются сообщения"
-- [ ] На непонятном сообщении бот отвечает `NOT_UNDERSTOOD` (без LLM)
-- [ ] Локально через polling: `/refind_vacancy` → "пришли вакансию" → отправил текст → получил stub-boolean → "ок" → "идёт прогон" → через 5 сек "готово" + stub .md файл
-- [ ] То же для `/refind_candidate`
-- [ ] Тест с 2 файлами: отправил vacancy.md + brief.md → оба извлеклись, boolean генерится с учётом brief (на этом шаге stub)
-- [ ] `/cancel` отменяет сессию
-- [ ] Файл .txt и .md обрабатываются (extractors.py)
-- [ ] Файл .pdf отвергается с понятным сообщением
-- [ ] Сессия и run появляются в SQLite
-- [ ] Async-пайплайн не блокирует обработку других сообщений (тест: запустить пайплайн, прислать /status — ответ сразу)
+- [x] `bot/` структура создана: `__init__.py`, `main.py`, `handlers.py`, `state_machine.py`, `extractors.py`, `pipelines.py`, `auth.py`, `replies.py` (без agent.py / agent_tools.py / tracking.py / notion_writer.py)
+- [x] State machine реализована с тестами на переходы (нет состояния WAITING_BRIEF) — `test_state_machine.py`, тест `test_no_waiting_brief_state`
+- [x] Auth работает (whitelisted пускается, не-whitelisted получает отказ) — `test_auth.py` + `test_handlers.py::test_unauthorized_user_blocked`
+- [x] Router в handlers.py: роутит по таблице "как обрабатываются сообщения"
+- [x] На непонятном сообщении бот отвечает осмысленно (`NOT_UNDERSTOOD` / `UNKNOWN_COMMAND` / `NO_SESSION`) — без LLM
+- [x] Локально через polling: `/refind_vacancy` → текст → stub-boolean → "ок" → "идёт прогон" → "готово" + stub .md файл — проверено Ренатом (лог в чате)
+- [x] То же для `/refind_candidate` — проверено Ренатом
+- [x] Тест с 2 файлами / .txt-.md / .pdf-reject — extractors покрыты `test_extractors.py` (19 тестов); .pdf-reject и .md проверены Ренатом в живом чате
+- [x] `/cancel` отменяет сессию — `test_handlers.py::test_cancel_active_session`
+- [x] Файл .txt и .md обрабатываются — проверено Ренатом + `test_extractors.py`
+- [x] Файл .pdf отвергается с понятным сообщением — проверено Ренатом + `test_extractors.py`
+- [x] Сессия и run появляются в SQLite — проверено по реальной БД после прогонов Рената (sessions #1-3, runs #1-2)
+- [x] Async-пайплайн не блокирует обработку других сообщений — `test_handlers.py::test_status_responds_while_pipeline_running` (/status отвечает <0.3с пока пайплайн спит 1с)
+
+## Заметки по реализации
+
+- `python-telegram-bot` 22.5. Пайплайн запускается через `asyncio.create_task` — бот не блокируется.
+- **Media-group:** 2 файла приходят как 2 отдельных update с общим `media_group_id`. Собираются с debounce 1.5с через `job_queue.run_once` — иначе обработали бы по одному.
+- `bot/main.py` авто-инициализирует схему БД при первом запуске (`_schema_ready`) — отдельный `db.client --init` для бота не нужен.
+- `on_text`/`_process_files` используют общий хелпер `_generate_boolean_and_advance(say=...)` — `say` это async-callable, работает и для текста (reply), и для media-group (send_message).
+- Юнит-тесты хендлеров — на мок-объектах Telegram (`FakeUpdate`/`FakeContext`), без сети.
