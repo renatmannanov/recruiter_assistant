@@ -1,6 +1,6 @@
 # Step 2: Создание нового репозитория
 
-> Статус: Фаза A — done. Фаза B (обновление 05_refind) — pending.
+> Статус: done — Фаза A и Фаза B выполнены.
 > Зависит от: step_1 (имя и решения)
 
 ## Цель
@@ -224,6 +224,6 @@ gh repo create recruiter_assistant --private --source=. --remote=origin --push
 - [x] Первый коммит запушен на GitHub (`9628acf` → origin/main, https://github.com/renatmannanov/recruiter_assistant), проверено через `git ls-tree origin/main`: 60 файлов, секретов нет
 
 **Фаза B — лёгкое обновление 05_refind (05_refind/services/ НЕ трогаем):**
-- [ ] `05_refind/CLAUDE.md` обновлён — добавлена секция "Связанные проекты"
-- [ ] Auto-memory скопирована в новый репо согласно step_1.5 (из 05_refind не удаляется)
-- [ ] Smoke test 05_refind: `enrich_contacts.py`, `discover_people.py` работают как раньше
+- [x] `05_refind/CLAUDE.md` обновлён — добавлена секция "Связанные проекты"
+- [x] Auto-memory скопирована в новый репо согласно step_1.5 (из 05_refind не удаляется; индекс 05_refind MEMORY.md помечен — активная разработка переехала)
+- [x] Smoke test 05_refind: `enrich_contacts.py`, `discover_people.py` запускаются как раньше; ручной прогон `boolean_generator` из `05_refind/services/recruiter_assistant/` тоже работает

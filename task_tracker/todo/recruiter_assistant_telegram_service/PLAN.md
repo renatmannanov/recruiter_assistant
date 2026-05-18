@@ -146,10 +146,10 @@ LLM-агент-помощник — в бэклог v2 (вернём если п
 - [x] Согласование завершено 2026-05-07. Hub полностью отделяется. См. `_archived/step_0_hub_architecture_alignment_RESOLVED.md` и `hub_response_to_proposal.md`.
 
 ### Шаг 1: Подготовка к выносу — определение границ
-- [~] step_1_scope_and_naming.md — Фаза A (новый репо) done; Фаза B (обновление `05_refind/CLAUDE.md` + auto-memory) — pending
+- [x] step_1_scope_and_naming.md — Фаза A (новый репо) + Фаза B (`05_refind/CLAUDE.md` + auto-memory) done
 
 ### Шаг 2: Создание нового репозитория
-- [~] step_2_create_new_repo.md — Фаза A done: git init, код скопирован в core/, импорты починены, load_dotenv вынесен в entry points, smoke test пройден, запушено на GitHub. Фаза B — pending
+- [x] step_2_create_new_repo.md — Фаза A done: git init, код скопирован в core/, импорты починены, load_dotenv вынесен в entry points, smoke test пройден, запушено на GitHub. Фаза B done: 05_refind/CLAUDE.md обновлён, smoke test 05_refind пройден
 
 ### Шаг 3: SQLite-схема
 - [ ] step_3_sqlite_schema.md — схема (без Notion-полей, без agent_invocations), миграции, `db/client.py` с CRUD, WAL, thread-safety, cleanup_stale_sessions, `--init` CLI

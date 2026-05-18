@@ -1,6 +1,6 @@
 # Step 1: Scope и naming нового репо
 
-> Статус: Фаза A — done. Фаза B (обновление 05_refind) — pending.
+> Статус: done — Фаза A и Фаза B выполнены.
 
 ## Решения (зафиксированы)
 
@@ -109,9 +109,9 @@ Recruiter_assistant как сервис = переиспользуемый ин�
 
 05_refind/services/recruiter_assistant/ **не трогаем** — код там остаётся. Меняем только метаданные:
 
-- [ ] Обновить `05_refind/CLAUDE.md` — добавить секцию "Связанные проекты" (см. 1.4)
-- [ ] Разделить auto-memory согласно 1.5
-- [ ] Smoke test 05_refind: `enrich_contacts.py` / `discover_people.py` работают как раньше (они и не должны были измениться)
+- [x] Обновить `05_refind/CLAUDE.md` — добавлена секция "Связанные проекты" (см. 1.4)
+- [x] Разделить auto-memory согласно 1.5 — индекс `05_refind` MEMORY.md помечен, что разработка переехала; memory-файлы из 05_refind не удалены
+- [x] Smoke test 05_refind: `enrich_contacts.py` / `discover_people.py` запускаются как раньше
 
 ## Критерии готовности
 
