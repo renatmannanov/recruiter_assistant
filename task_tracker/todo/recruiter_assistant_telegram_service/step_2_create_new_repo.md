@@ -1,6 +1,6 @@
 # Step 2: Создание нового репозитория
 
-> Статус: pending
+> Статус: Фаза A — done. Фаза B (обновление 05_refind) — pending.
 > Зависит от: step_1 (имя и решения)
 
 ## Цель
@@ -208,20 +208,20 @@ gh repo create recruiter_assistant --private --source=. --remote=origin --push
 ## Критерии готовности
 
 **Фаза A — новый репо (НЕ трогаем 05_refind):**
-- [ ] Новый репо создан, структура соответствует PLAN.md
-- [ ] **Только код** скопирован в `core/` (boolean_generator, candidate_screener, PIPELINE_*.md). `clients/`, `candidates/`, `test_results/` НЕ копировались
-- [ ] Audit imports: `grep -rn "^from candidate_screener\|^from boolean_generator" core/` — нет absolute imports на пакеты
-- [ ] `core/utils/env.py` создан с `load_project_env()`
-- [ ] `load_dotenv` убран из библиотечных модулей, остался только в entry-point CLI
-- [ ] Импорты работают: `python -m core.boolean_generator.generator ...` запускается
-- [ ] Smoke test: boolean_generator запускается из нового репо с явным путём к vacancy.md в 05_refind
-- [ ] `.gitignore` исключает `data/`, `.env`, `*.db`, `config/whitelist.json`
-- [ ] `.env.example` создан (без Notion/agent-переменных)
-- [ ] `config/whitelist.example.json` создан (только telegram_user_id + display_name)
-- [ ] `config/whitelist.json` НЕ создан в репо
-- [ ] `requirements.txt` собран, `pip install` работает в чистом venv (без claude-agent-sdk, без notion-client)
-- [ ] README с инструкциями по ручному запуску
-- [ ] Первый коммит запушен на GitHub, **визуальная проверка** на github.com
+- [x] Новый репо создан, структура соответствует PLAN.md
+- [x] **Только код** скопирован в `core/` (boolean_generator, candidate_screener, PIPELINE_*.md). `clients/`, `candidates/`, `test_results/` НЕ копировались
+- [x] Audit imports: `grep -rn "^from candidate_screener\|^from boolean_generator" core/` — нет absolute imports на пакеты
+- [x] `core/utils/env.py` создан с `load_project_env()`
+- [x] `load_dotenv` убран из библиотечных модулей, остался только в entry-point CLI
+- [x] Импорты работают: `python -m core.boolean_generator.generator ...` запускается
+- [x] Smoke test: boolean_generator запускается из нового репо с явным путём к vacancy.md в 05_refind
+- [x] `.gitignore` исключает `data/`, `.env`, `*.db`, `config/whitelist.json`
+- [x] `.env.example` создан (без Notion/agent-переменных)
+- [x] `config/whitelist.example.json` создан (только telegram_user_id + display_name)
+- [x] `config/whitelist.json` НЕ создан в репо
+- [ ] `requirements.txt` собран — `pip install` в чистом venv ещё не проверялся (зависимости стоят в системном Python, smoke test косвенно подтвердил; явная проверка venv — на step_7)
+- [x] README с инструкциями по ручному запуску
+- [x] Первый коммит запушен на GitHub (`9628acf` → origin/main, https://github.com/renatmannanov/recruiter_assistant), проверено через `git ls-tree origin/main`: 60 файлов, секретов нет
 
 **Фаза B — лёгкое обновление 05_refind (05_refind/services/ НЕ трогаем):**
 - [ ] `05_refind/CLAUDE.md` обновлён — добавлена секция "Связанные проекты"

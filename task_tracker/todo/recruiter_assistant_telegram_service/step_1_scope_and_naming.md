@@ -1,6 +1,6 @@
 # Step 1: Scope и naming нового репо
 
-> Статус: pending — все решения зафиксированы, осталось выполнить действия
+> Статус: Фаза A — done. Фаза B (обновление 05_refind) — pending.
 
 ## Решения (зафиксированы)
 
@@ -92,18 +92,18 @@ Recruiter_assistant как сервис = переиспользуемый ин�
 
 ### Фаза A — создание нового репо
 
-- [ ] Создать новый локальный репо `c:\Users\renat\projects\recruiter_assistant\`
-- [ ] **Скопировать** (не переместить!) код `boolean_generator/` и `candidate_screener/` + `PIPELINE_*.md` из `05_refind/services/recruiter_assistant/` → `recruiter_assistant/core/`
-- [ ] **НЕ копировать** `clients/`, `candidates/`, `test_results/` — данные клиентов, боту не нужны
-- [ ] Создать `bot/`, `db/`, `config/` пустыми; `data/` (gitignored)
-- [ ] Создать `.gitignore`, `.env.example`, `README.md`, `requirements.txt`
-- [ ] Создать `recruiter_assistant/MEMORY.md` (индекс на скопированные memory-файлы)
-- [ ] **Скопировать** auto-memory файлы в `c--Users-renat-projects-recruiter_assistant\memory\`
-- [ ] **Скопировать** текущий план в новый репо
-- [ ] `git init` + `git add .` + `git commit -m "feat: initial migration from 05_refind/services/recruiter_assistant"`
-- [ ] `gh repo create recruiter_assistant --private --source=. --remote=origin --push`
-- [ ] **БАРЬЕР:** проверить на github.com что репо доступен, ключевые файлы на месте
-- [ ] Smoke test нового репо: boolean генерится из нового места (см. step_2)
+- [x] Создать новый локальный репо `c:\Users\renat\projects\recruiter_assistant\`
+- [x] **Скопировать** (не переместить!) код `boolean_generator/` и `candidate_screener/` + `PIPELINE_*.md` из `05_refind/services/recruiter_assistant/` → `recruiter_assistant/core/`
+- [x] **НЕ копировать** `clients/`, `candidates/`, `test_results/` — данные клиентов, боту не нужны
+- [x] Создать `bot/`, `db/`, `config/` пустыми; `data/` (gitignored)
+- [x] Создать `.gitignore`, `.env.example`, `README.md`, `requirements.txt`
+- [x] Создать `MEMORY.md` (индекс на скопированные memory-файлы) — в `c--Users-renat-projects-recruiter_assistant\memory\MEMORY.md`
+- [x] **Скопировать** auto-memory файлы в `c--Users-renat-projects-recruiter_assistant\memory\`
+- [x] **Скопировать** текущий план в новый репо
+- [x] `git init` + `git add .` + `git commit` (`9628acf`)
+- [x] Репо на GitHub: `https://github.com/renatmannanov/recruiter_assistant` (создан вручную Ренатом, не через `gh repo create` — `gh` не залогинен), `origin` добавлен, ветка `main` запушена
+- [x] **БАРЬЕР:** проверено через `git ls-tree origin/main` — 60 файлов, ключевые на месте, секретов (`.env`, `whitelist.json`) нет
+- [x] Smoke test нового репо: boolean генерится из нового места (boolean_generator → OpenAI, реальный прогон по sonia/asr vacancy)
 
 ### Фаза B — лёгкое обновление 05_refind (необязательный порядок, безопасно)
 
