@@ -146,4 +146,25 @@
 - **Не сделано (намеренно):** транзакций для bulk-insert candidates/vacancies
   пока нет — план оставил это на потом ("без транзакции в первой версии").
 
+### step_4 (2026-05-28)
+
+- **`bot/main.py` переписан под post_init/post_shutdown** —
+  `Application.builder().post_init(_post_init).post_shutdown(_post_shutdown)`.
+  PTB v21 запускает `_post_init` в event loop после старта event loop —
+  единственное правильное место для async `DB.connect()`.
+- **`_schema_ready` переписан под PG**: проверка через
+  `information_schema.tables WHERE table_name='sessions'`. Старый код
+  `db._conn.execute("SELECT ... FROM sqlite_master")` удалён.
+- **`DB_PATH` больше не читается** в bot/main.py — DSN целиком из env через
+  `DB.connect()`. Переменная всё ещё есть в `.env` (gitignored, legacy),
+  можно удалить позже в step_13.
+- **Все db.* вызовы async**: 11 awaits в handlers.py, 5 в pipelines.py.
+  `_db(context)` остаётся sync — это просто accessor `bot_data["db"]`.
+- **Smoke-test:** `python -m bot.main` → "recruiter_assistant bot starting" →
+  "Application started" → начинаются `getUpdates` polls. БД подключилась,
+  ошибок нет. Бот остановлен после проверки (был фоновый процесс, активно
+  полил Telegram — не оставлять надолго).
+- **Тесты пока в SQLite-формате** → падают на импорте/фикстурах. Чинится на
+  step_5.
+
 ---

@@ -52,9 +52,9 @@ async def _ensure_user(db: DB, update: Update) -> bool:
     if not auth.is_authorized(user.id):
         await _reply(update, replies.UNAUTHORIZED)
         return False
-    if db.get_user(user.id) is None:
+    if await db.get_user(user.id) is None:
         cfg = auth.get_user_config(user.id) or {}
-        db.upsert_user(user.id, cfg.get("display_name") or user.full_name)
+        await db.upsert_user(user.id, cfg.get("display_name") or user.full_name)
     return True
 
 
@@ -80,11 +80,11 @@ async def _start_session(
         return
     user_id = update.effective_user.id
 
-    active = db.get_active_session(user_id)
+    active = await db.get_active_session(user_id)
     if active is not None:
-        db.update_session(active["id"], step=SessionStep.CANCELLED.value)
+        await db.update_session(active["id"], step=SessionStep.CANCELLED.value)
 
-    db.create_session(user_id, pipeline_type)
+    await db.create_session(user_id, pipeline_type)
     await _reply(update, ask_text)
 
 
@@ -105,11 +105,11 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = _db(context)
     if not await _ensure_user(db, update):
         return
-    active = db.get_active_session(update.effective_user.id)
+    active = await db.get_active_session(update.effective_user.id)
     if active is None:
         await _reply(update, replies.NOTHING_TO_CANCEL)
         return
-    db.update_session(active["id"], step=SessionStep.CANCELLED.value)
+    await db.update_session(active["id"], step=SessionStep.CANCELLED.value)
     await _reply(update, replies.SESSION_CANCELLED)
 
 
@@ -118,7 +118,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = _db(context)
     if not await _ensure_user(db, update):
         return
-    active = db.get_active_session(update.effective_user.id)
+    active = await db.get_active_session(update.effective_user.id)
     if active is None:
         await _reply(update, replies.STATUS_NO_SESSION)
         return
@@ -150,7 +150,7 @@ async def _generate_boolean_and_advance(
     boolean = await pipelines.generate_boolean(
         input_text, brief_text, session["pipeline_type"]
     )
-    db.update_session(
+    await db.update_session(
         session["id"],
         input_text=input_text,
         brief_text=brief_text,
@@ -171,7 +171,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.effective_message.text or ""
 
-    session = db.get_active_session(user_id)
+    session = await db.get_active_session(user_id)
     if session is None:
         await _reply(update, replies.NO_SESSION)
         return
@@ -198,7 +198,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             boolean = session["boolean_text_original"]
         else:
             boolean = text.strip()
-        db.update_session(
+        await db.update_session(
             session["id"],
             boolean_text=boolean,
             step=SessionStep.RUNNING.value,
@@ -274,7 +274,7 @@ async def _process_files(
         else:
             await context.bot.send_message(chat_id, text, **kwargs)
 
-    session = db.get_active_session(user_id)
+    session = await db.get_active_session(user_id)
     if session is None:
         await say(replies.NO_SESSION)
         return
@@ -335,12 +335,12 @@ async def _run_pipeline_task(
     """Run the pipeline, persist the run, deliver the report (or the error)."""
     db = _db(context)
     user_id = chat_id
-    run_id = db.create_run(session_id, user_id, pipeline_type)
+    run_id = await db.create_run(session_id, user_id, pipeline_type)
     try:
         result = await pipelines.run_pipeline(
             session_id, pipeline_type, run_id=run_id, db=db,
         )
-        db.complete_run(
+        await db.complete_run(
             run_id,
             found_count=result["found"],
             screened_count=result["screened"],
@@ -348,7 +348,7 @@ async def _run_pipeline_task(
             cost_usd=result["cost_usd"],
             duration_sec=result["duration_sec"],
         )
-        db.complete_session(session_id, result["report_path"])
+        await db.complete_session(session_id, result["report_path"])
         total_found = result.get("total_found")
         await context.bot.send_message(
             chat_id,
@@ -366,8 +366,8 @@ async def _run_pipeline_task(
             await context.bot.send_document(chat_id, fh, filename="report.md")
     except Exception as e:  # noqa: BLE001 — surface any failure to the user
         log.exception("pipeline failed for session %s", session_id)
-        db.fail_run(run_id, str(e))
-        db.fail_session(session_id, str(e))
+        await db.fail_run(run_id, str(e))
+        await db.fail_session(session_id, str(e))
         await context.bot.send_message(
             chat_id,
             replies.PIPELINE_FAILED.format(

@@ -29,12 +29,32 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 
-def _schema_ready(db: DB) -> bool:
-    """True if core tables exist (the file may exist but be empty)."""
-    rows = db._conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
-    ).fetchall()
-    return len(rows) == 1
+async def _schema_ready(db: DB) -> bool:
+    """True if core tables exist (PG database may be empty on a fresh install)."""
+    async with db._pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name='sessions'"
+        )
+    return row is not None
+
+
+async def _post_init(app: Application):
+    """Connect to Postgres, init schema if empty, drop stale sessions."""
+    db = await DB.connect()
+    if not await _schema_ready(db):
+        log.info("initializing DB schema (no 'sessions' table yet)")
+        await db.initialize_from_schema()
+    stale = await db.cleanup_stale_sessions()
+    if stale:
+        log.info("cleaned up %d stale session(s)", stale)
+    app.bot_data["db"] = db
+
+
+async def _post_shutdown(app: Application):
+    db = app.bot_data.get("db")
+    if db is not None:
+        await db.close()
 
 
 def _build_application() -> Application:
@@ -43,21 +63,13 @@ def _build_application() -> Application:
         print("Error: TELEGRAM_BOT_TOKEN not set in .env", file=sys.stderr)
         sys.exit(1)
 
-    db_path = os.environ.get("DB_PATH", "./data/recruiter_assistant.db")
-    db_existed = os.path.exists(db_path)
-    db = DB(db_path)
-    # First run (or an empty file) -> create the schema so the bot is
-    # self-sufficient and does not need a separate `db.client --init`.
-    if not db_existed or not _schema_ready(db):
-        log.info("initializing DB schema at %s", db_path)
-        db.initialize_from_schema()
-    # Stale sessions from a previous crashed run -> mark errored on startup.
-    stale = db.cleanup_stale_sessions()
-    if stale:
-        log.info("cleaned up %d stale session(s)", stale)
-
-    app = Application.builder().token(token).build()
-    app.bot_data["db"] = db
+    app = (
+        Application.builder()
+        .token(token)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
 
     # Commands.
     app.add_handler(CommandHandler(["start", "help"], handlers.cmd_start))

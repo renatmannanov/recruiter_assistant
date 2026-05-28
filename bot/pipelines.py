@@ -141,7 +141,7 @@ async def _run_vacancy_pipeline(
     data_dir: str,
 ) -> dict:
     started_at = time.monotonic()
-    session = db.get_session(session_id)
+    session = await db.get_session(session_id)
     if session is None:
         raise RuntimeError(f"session {session_id} not found")
 
@@ -182,7 +182,7 @@ async def _run_vacancy_pipeline(
             session_id, discover_result["found_count"],
             discover_result["cost_usd"],
         )
-    db.update_run(run_id, raw_apify_path=str(raw_path))
+    await db.update_run(run_id, raw_apify_path=str(raw_path))
 
     # 2) Dedup against this user's previously seen candidates (SQLite-only).
     seen_before = 0
@@ -193,7 +193,7 @@ async def _run_vacancy_pipeline(
             # No URL means we cannot dedup or store it. Skip — same as
             # discover.py CLI behaviour.
             continue
-        if db.is_candidate_known(user_id, url):
+        if await db.is_candidate_known(user_id, url):
             seen_before += 1
             continue
         new_profiles.append(p)
@@ -217,12 +217,12 @@ async def _run_vacancy_pipeline(
     # 4) Persist screened candidates (idempotent: dedup above guarantees no
     # duplicates per user). Skip if nothing was screened.
     if screening["db_rows"]:
-        db.insert_candidates(run_id, user_id, screening["db_rows"])
+        await db.insert_candidates(run_id, user_id, screening["db_rows"])
 
     # 5) Write the report file + persist the markdown body for analytics.
     report_path = sess_dir / "report.md"
     report_path.write_text(screening["report_md"], encoding="utf-8")
-    db.update_run(
+    await db.update_run(
         run_id,
         screening_json=json.dumps(
             [_compact_result(r) for r in screening["results"]],

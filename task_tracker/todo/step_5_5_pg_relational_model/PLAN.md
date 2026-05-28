@@ -31,7 +31,7 @@ PG без изменений в логике, потом новая модель
 | 1  | step_1_pg_setup_on_mac.md                         | 1    | [x]    |
 | 2  | step_2_pg_schema_lift.md                          | 1    | [x]    |
 | 3  | step_3_asyncpg_client.md                          | 1    | [x]    |
-| 4  | step_4_async_callers_bot.md                       | 1    | [ ]    |
+| 4  | step_4_async_callers_bot.md                       | 1    | [x]    |
 | 5  | step_5_pg_test_fixture.md                         | 1    | [ ]    |
 | 6  | step_6_phase1_e2e.md                              | 1    | [ ]    |
 | 7  | step_7_relational_schema.md                       | 2    | [ ]    |
