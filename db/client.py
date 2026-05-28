@@ -13,11 +13,14 @@ CLI:
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from urllib.parse import quote
 
 import asyncpg
+
+from core.candidate_screener.core.profile_cleaner import clean_profile
 
 _DB_DIR = Path(__file__).resolve().parent
 _SCHEMA_PATH = _DB_DIR / "schema.sql"
@@ -280,89 +283,238 @@ class DB:
     async def fail_run(self, run_id: int, error_text: str):
         await self.update_run(run_id, status="failed", error_text=error_text)
 
-    # ------------------------------------------------------- candidates / vacancies
+    # ------------------------------------------------------------------ companies
 
-    async def insert_candidates(
-        self, run_id: int, user_id: int, candidates: list[dict]
-    ):
-        """Bulk-insert screened candidates for a run.
-
-        Each dict may contain: linkedin_url (required), name, ai_status,
-        ai_score, ai_comment, raw_profile_json.
-        """
-        if not candidates:
-            return
-        rows = [
-            (
-                run_id,
-                user_id,
-                c["linkedin_url"],
-                c.get("name"),
-                c.get("ai_status"),
-                c.get("ai_score"),
-                c.get("ai_comment"),
-                c.get("raw_profile_json"),
-            )
-            for c in candidates
-        ]
-        async with self._pool.acquire() as conn:
-            await conn.executemany(
-                "INSERT INTO candidates_found("
-                "run_id, user_id, linkedin_url, name, ai_status, "
-                "ai_score, ai_comment, raw_profile_json) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                rows,
-            )
-
-    async def insert_vacancies(
-        self, run_id: int, user_id: int, vacancies: list[dict]
-    ):
-        """Bulk-insert scored vacancies for a run.
-
-        Each dict may contain: linkedin_url (required), title, company,
-        location, ai_score, ai_recommendation, raw_job_json.
-        """
-        if not vacancies:
-            return
-        rows = [
-            (
-                run_id,
-                user_id,
-                v["linkedin_url"],
-                v.get("title"),
-                v.get("company"),
-                v.get("location"),
-                v.get("ai_score"),
-                v.get("ai_recommendation"),
-                v.get("raw_job_json"),
-            )
-            for v in vacancies
-        ]
-        async with self._pool.acquire() as conn:
-            await conn.executemany(
-                "INSERT INTO vacancies_found("
-                "run_id, user_id, linkedin_url, title, company, "
-                "location, ai_score, ai_recommendation, raw_job_json) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-                rows,
-            )
-
-    async def is_candidate_known(self, user_id: int, linkedin_url: str) -> bool:
-        """True if this LinkedIn URL was already found for this user."""
+    async def get_or_create_company(self, name: str) -> int:
+        """Return id of the company with this name; insert if missing."""
         row = await self._query_one(
-            "SELECT 1 FROM candidates_found "
-            "WHERE user_id = $1 AND linkedin_url = $2 LIMIT 1",
-            user_id,
-            linkedin_url,
+            "INSERT INTO companies(name) VALUES ($1) "
+            "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name "
+            "RETURNING id",
+            name,
+        )
+        return row["id"]
+
+    async def get_company(self, company_id: int) -> dict | None:
+        return await self._query_one(
+            "SELECT * FROM companies WHERE id = $1", company_id
+        )
+
+    async def list_companies(self) -> list[dict]:
+        return await self._query_all(
+            "SELECT * FROM companies ORDER BY name"
+        )
+
+    # ------------------------------------------------------------------ vacancies
+
+    async def create_vacancy(
+        self,
+        *,
+        source: str,
+        name: str | None = None,
+        jd_text: str | None = None,
+        brief_text: str | None = None,
+        company_id: int | None = None,
+        linkedin_url: str | None = None,
+        title: str | None = None,
+        location: str | None = None,
+        seniority: str | None = None,
+        created_by_user_id: int | None = None,
+        discovered_in_run_id: int | None = None,
+    ) -> int:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO vacancies("
+                "source, name, jd_text, brief_text, company_id, linkedin_url, "
+                "title, location, seniority, created_by_user_id, "
+                "discovered_in_run_id) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
+                "RETURNING id",
+                source, name, jd_text, brief_text, company_id, linkedin_url,
+                title, location, seniority, created_by_user_id,
+                discovered_in_run_id,
+            )
+        return row["id"]
+
+    async def get_vacancy(self, vacancy_id: int) -> dict | None:
+        return await self._query_one(
+            "SELECT * FROM vacancies WHERE id = $1", vacancy_id
+        )
+
+    async def list_vacancies_by_user(
+        self, user_id: int, source: str | None = None
+    ) -> list[dict]:
+        sql = "SELECT * FROM vacancies WHERE created_by_user_id = $1"
+        params: list = [user_id]
+        if source is not None:
+            params.append(source)
+            sql += f" AND source = ${len(params)}"
+        sql += " ORDER BY created_at DESC, id DESC"
+        return await self._query_all(sql, *params)
+
+    # ----------------------------------------------------------------- candidates
+
+    async def upsert_candidate(self, raw_profile: dict) -> int:
+        """Upsert by linkedin_url; refresh last_seen_at and raw_profile_json.
+
+        Uses clean_profile() to extract the standard fields (name, headline,
+        location, about) the same way the screening pipeline does. Raw JSON is
+        stored verbatim in raw_profile_json (JSONB).
+        """
+        cleaned = clean_profile(raw_profile)
+        url = cleaned["linkedin_url"]
+        if not url:
+            raise ValueError("raw_profile has no linkedinUrl")
+        raw_json = json.dumps(raw_profile, ensure_ascii=False)
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO candidates("
+                "linkedin_url, name, headline, location, about, raw_profile_json) "
+                "VALUES ($1, $2, $3, $4, $5, $6::jsonb) "
+                "ON CONFLICT (linkedin_url) DO UPDATE SET "
+                "name             = EXCLUDED.name, "
+                "headline         = EXCLUDED.headline, "
+                "location         = EXCLUDED.location, "
+                "about            = EXCLUDED.about, "
+                "raw_profile_json = EXCLUDED.raw_profile_json, "
+                "last_seen_at     = now(), "
+                "updated_at       = now() "
+                "RETURNING id",
+                url, cleaned["name"], cleaned["headline"],
+                cleaned["location"], cleaned["about"], raw_json,
+            )
+        return row["id"]
+
+    async def get_candidate(self, candidate_id: int) -> dict | None:
+        return await self._query_one(
+            "SELECT * FROM candidates WHERE id = $1", candidate_id
+        )
+
+    async def get_candidate_by_url(self, linkedin_url: str) -> dict | None:
+        return await self._query_one(
+            "SELECT * FROM candidates WHERE linkedin_url = $1", linkedin_url
+        )
+
+    # ------------------------------------------------------------------- searches
+
+    async def create_search(
+        self,
+        *,
+        vacancy_id: int,
+        boolean_text: str,
+        created_by_user_id: int,
+        original_boolean: str | None = None,
+    ) -> int:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO searches("
+                "vacancy_id, boolean_text, original_boolean, created_by_user_id) "
+                "VALUES ($1, $2, $3, $4) RETURNING id",
+                vacancy_id, boolean_text, original_boolean, created_by_user_id,
+            )
+        return row["id"]
+
+    async def get_search(self, search_id: int) -> dict | None:
+        return await self._query_one(
+            "SELECT * FROM searches WHERE id = $1", search_id
+        )
+
+    async def list_searches_by_vacancy(self, vacancy_id: int) -> list[dict]:
+        return await self._query_all(
+            "SELECT * FROM searches WHERE vacancy_id = $1 "
+            "ORDER BY created_at ASC, id ASC",
+            vacancy_id,
+        )
+
+    # -------------------------------------------------------- candidate_screenings
+
+    async def create_screening(
+        self,
+        *,
+        candidate_id: int,
+        vacancy_id: int,
+        run_id: int,
+        user_id: int,
+        ai_status: str | None,
+        ai_score: int | None,
+        ai_comment: str | None,
+    ) -> int:
+        """Insert a screening row; return its id (existing on conflict).
+
+        ON CONFLICT (candidate, vacancy, run) DO UPDATE ai_status = old value
+        is a no-op write — the trick is that "UPDATE happened" makes
+        RETURNING id work even on conflict. One query, always returns id.
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO candidate_screenings("
+                "candidate_id, vacancy_id, run_id, user_id, "
+                "ai_status, ai_score, ai_comment) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7) "
+                "ON CONFLICT (candidate_id, vacancy_id, run_id) DO UPDATE SET "
+                "ai_status = candidate_screenings.ai_status "
+                "RETURNING id",
+                candidate_id, vacancy_id, run_id, user_id,
+                ai_status, ai_score, ai_comment,
+            )
+        return row["id"]
+
+    async def list_screenings_by_candidate(
+        self, candidate_id: int
+    ) -> list[dict]:
+        return await self._query_all(
+            "SELECT * FROM candidate_screenings "
+            "WHERE candidate_id = $1 ORDER BY created_at DESC, id DESC",
+            candidate_id,
+        )
+
+    async def list_screenings_by_vacancy(
+        self, vacancy_id: int
+    ) -> list[dict]:
+        return await self._query_all(
+            "SELECT * FROM candidate_screenings "
+            "WHERE vacancy_id = $1 ORDER BY created_at DESC, id DESC",
+            vacancy_id,
+        )
+
+    async def list_screenings_by_run(self, run_id: int) -> list[dict]:
+        return await self._query_all(
+            "SELECT * FROM candidate_screenings "
+            "WHERE run_id = $1 ORDER BY id ASC",
+            run_id,
+        )
+
+    async def is_candidate_known_to_user(
+        self, user_id: int, linkedin_url: str
+    ) -> bool:
+        """True if this user has at least one screening of this LinkedIn URL.
+
+        Used for the PIPELINE_DONE summary ("X of N you've already seen on
+        other vacancies"). Not for dedup — for dedup use
+        is_candidate_screened_for_vacancy.
+        """
+        row = await self._query_one(
+            "SELECT 1 FROM candidates c "
+            "JOIN candidate_screenings s ON s.candidate_id = c.id "
+            "WHERE c.linkedin_url = $1 AND s.user_id = $2 LIMIT 1",
+            linkedin_url, user_id,
         )
         return row is not None
 
-    async def is_vacancy_known(self, user_id: int, linkedin_url: str) -> bool:
+    async def is_candidate_screened_for_vacancy(
+        self, linkedin_url: str, vacancy_id: int
+    ) -> bool:
+        """True if this LinkedIn URL was already screened against this vacancy.
+
+        Used for dedup in pipelines: a candidate already screened for this
+        vacancy (in any run) shouldn't be sent to the LLM again. Cross-
+        vacancy is fine — different requirements, different result.
+        """
         row = await self._query_one(
-            "SELECT 1 FROM vacancies_found "
-            "WHERE user_id = $1 AND linkedin_url = $2 LIMIT 1",
-            user_id,
-            linkedin_url,
+            "SELECT 1 FROM candidates c "
+            "JOIN candidate_screenings s ON s.candidate_id = c.id "
+            "WHERE c.linkedin_url = $1 AND s.vacancy_id = $2 LIMIT 1",
+            linkedin_url, vacancy_id,
         )
         return row is not None
 
@@ -372,9 +524,8 @@ class DB:
     # rather than emit a broken UPDATE or risk identifier injection.
     _COLUMNS = {
         "sessions": {
-            "user_id", "pipeline_type", "step", "input_text", "brief_text",
-            "boolean_text", "boolean_text_original", "report_path",
-            "error_text",
+            "user_id", "pipeline_type", "step", "vacancy_id", "search_id",
+            "report_path", "error_text",
         },
         "runs": {
             "session_id", "user_id", "pipeline_type", "status",

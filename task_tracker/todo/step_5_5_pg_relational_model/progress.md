@@ -275,3 +275,67 @@ e2e через Telegram подтверждён. Следующее — фаза 
       свежей БД", миграции остаются как путь апгрейда.
   Решение зафиксируем в step_8.
 - **Коммит**: `feat(db): step 5.5.7 — relational model migration` (далее).
+
+### step_8 (2026-05-28)
+
+- **Решение по фикстуре vs миграции (открытый вопрос из step_7) — вариант
+  (а):** `db/schema.sql` обновлён до снимка актуального состояния
+  (v1 + 002 склеены). Конвенция: при добавлении новой миграции NNN_xxx.sql
+  одновременно обновлять `schema.sql`. Альтернативы (б)/(в) — фикстура
+  применяет миграции — отвергнуты ради скорости тестов и простоты.
+  В comment в `schema.sql` зафиксирована эта конвенция.
+- **schema.sql v2 — реструктура**: использован `DO $$ ... EXCEPTION WHEN
+  duplicate_object` для идемпотентного создания ENUM (CREATE TYPE не имеет
+  IF NOT EXISTS в PG <16). Late-bind FK через `ALTER TABLE ADD CONSTRAINT`
+  внутри `DO $$ ... EXCEPTION WHEN duplicate_object` — потому что
+  `vacancies.discovered_in_run_id` ссылается на `runs`, а
+  `sessions.search_id` на `searches`, и обе target-таблицы определены
+  после ссылающихся.
+- **CRUD-методы добавлены в `db/client.py`:** companies (3), vacancies (3),
+  candidates (3 — `upsert_candidate` использует `clean_profile()` из
+  `core/candidate_screener/core/profile_cleaner.py` чтобы вытащить
+  name/headline/location/about из raw Apify-структуры), searches (3),
+  candidate_screenings (4 + 2 предиката). Итого 18 новых async-методов.
+- **`upsert_candidate(raw_profile: dict)`** — единая точка преобразования
+  Apify-формата → таблица `candidates`. Реюзает `clean_profile()`,
+  чтобы не дублировать парсинг nested-location и т.п. ON CONFLICT
+  (linkedin_url) DO UPDATE — обновляет все поля + `last_seen_at = now()`.
+- **`create_screening`** — использует трюк «no-op upsert returning id»:
+  `ON CONFLICT (candidate, vacancy, run) DO UPDATE SET ai_status =
+  candidate_screenings.ai_status RETURNING id`. UPDATE присваивает
+  колонке её же значение — синтаксически "UPDATE случился", RETURNING
+  возвращает id. **Важно**: при retry payload НЕ перезаписывается
+  (проверено в `test_create_screening_unique_returns_existing_id`).
+- **Два предиката дедупа:**
+  - `is_candidate_known_to_user(user_id, linkedin_url)` — bool, для
+    PIPELINE_DONE-сообщения "X из 25 уже видели".
+  - `is_candidate_screened_for_vacancy(linkedin_url, vacancy_id)` — bool,
+    для пропуска LLM в hot-path pipelines.py (на step_9).
+  Оба через JOIN `candidates ↔ candidate_screenings`.
+- **`_COLUMNS["sessions"]`** обновлён: -input_text -brief_text
+  -boolean_text -boolean_text_original +vacancy_id +search_id.
+- **Удалено** из `db/client.py`: `insert_candidates`, `insert_vacancies`,
+  `is_candidate_known`, `is_vacancy_known` (старые таблицы DROP'нуты).
+- **Тесты:**
+  - Новый файл `tests/test_db_relational.py` — 16 тестов
+    (companies, vacancies включая partial UNIQUE, candidates включая
+    concurrent upsert, searches, screenings, оба предиката). Все зелёные
+    с первого прогона.
+  - `tests/test_db_client.py`: удалены 4 теста на удалённые методы,
+    `test_update_session_bumps_updated_at` адаптирован (без `input_text`).
+  - `tests/test_handlers.py`: `test_text_in_waiting_input_generates_boolean`
+    помечен `pytest.mark.skip` (handler пишет в дропнутые колонки —
+    переписать на step_9).
+  - `tests/test_pipelines_resume.py`: оба теста (`test_resumes_from_*`,
+    `test_calls_discover_*`) помечены `skip` — `_seed_session_with_input`
+    использует `input_text/boolean_text*`. Переписать на step_9.
+  - **Итог: 98 passed, 3 skipped, 0 failed** (было 89 на v1). Цель
+    "90+ зелёных" перевыполнена.
+- **Грабля для step_9 — handler/pipelines красные в проде:** после
+  изменений в `db/client.py` бот **не запустится** на TG без переписи
+  `bot/handlers.py` и `bot/pipelines.py` (они вызывают
+  `db.insert_candidates`, `db.is_candidate_known`, и пишут в
+  `sessions.input_text`). Бот сейчас не запущен (`/refind_vacancy`
+  упадёт). Step_9 чинит это, переписывая handler/pipelines на новую
+  модель и снимая `skip` с тестов.
+- **Коммит**: `feat(db): step 5.5.8 — CRUD methods for new relational model`.

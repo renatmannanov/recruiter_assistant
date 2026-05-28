@@ -9,8 +9,6 @@ on the shared `recruiter_assistant_dev` DB.
 Run from the repo root:  python -m pytest tests/test_db_client.py -v
 """
 
-import asyncio
-
 import pytest
 
 
@@ -61,9 +59,8 @@ async def test_create_session_starts_at_waiting_input(db):
 async def test_update_session_bumps_updated_at(db):
     await db.upsert_user(111)
     sid = await db.create_session(111, "cv_to_jobs")
-    await db.update_session(sid, input_text="my CV", step="waiting_boolean_confirm")
+    await db.update_session(sid, step="waiting_boolean_confirm")
     session = await db.get_session(sid)
-    assert session["input_text"] == "my CV"
     assert session["step"] == "waiting_boolean_confirm"
 
 
@@ -153,45 +150,15 @@ async def test_fail_run(db):
     assert run["error_text"] == "openai 429"
 
 
-# ------------------------------------------------------- candidates / vacancies
-
-async def test_insert_candidates_and_dedup(db):
-    await db.upsert_user(111)
-    sid = await db.create_session(111, "vacancy_to_candidates")
-    rid = await db.create_run(sid, 111, "vacancy_to_candidates")
-    await db.insert_candidates(rid, 111, [
-        {"linkedin_url": "https://li/a", "name": "Alice",
-         "ai_status": "pass", "ai_score": 9, "ai_comment": "strong"},
-        {"linkedin_url": "https://li/b", "name": "Bob",
-         "ai_status": "fail", "ai_score": 3},
-    ])
-    assert await db.is_candidate_known(111, "https://li/a") is True
-    assert await db.is_candidate_known(111, "https://li/zzz") is False
-    # dedup is per-user — another user has not seen this URL
-    assert await db.is_candidate_known(222, "https://li/a") is False
-
-
-async def test_insert_vacancies_and_dedup(db):
-    await db.upsert_user(111)
-    sid = await db.create_session(111, "cv_to_jobs")
-    rid = await db.create_run(sid, 111, "cv_to_jobs")
-    await db.insert_vacancies(rid, 111, [
-        {"linkedin_url": "https://li/job1", "title": "ML Engineer",
-         "company": "Acme", "location": "Berlin", "ai_score": 8},
-    ])
-    assert await db.is_vacancy_known(111, "https://li/job1") is True
-    assert await db.is_vacancy_known(111, "https://li/job404") is False
-
-
-async def test_insert_empty_list_is_noop(db):
-    await db.upsert_user(111)
-    sid = await db.create_session(111, "vacancy_to_candidates")
-    rid = await db.create_run(sid, 111, "vacancy_to_candidates")
-    await db.insert_candidates(rid, 111, [])  # must not raise
-    assert await db.is_candidate_known(111, "anything") is False
-
-
-# ----------------------------------------------------------------- guardrails
+# ------------------------------------------------------------------ guardrails
+# (Tests for the new relational model — candidates / vacancies / searches /
+#  candidate_screenings — live in test_db_relational.py.)
+#
+# Removed at step_8: test_insert_candidates_and_dedup,
+#                    test_insert_vacancies_and_dedup,
+#                    test_insert_empty_list_is_noop
+# — the underlying tables (candidates_found / vacancies_found) and methods
+# (insert_candidates / is_candidate_known / ...) were dropped in migration 002.
 
 async def test_update_session_rejects_unknown_column(db):
     await db.upsert_user(111)
@@ -208,24 +175,7 @@ async def test_update_run_rejects_unknown_column(db):
         await db.update_run(rid, not_a_column=1)
 
 
-# ------------------------------------------------------------------ concurrency
-
-async def test_concurrent_inserts_via_asyncio_gather(db):
-    """10 concurrent insert_candidates calls must all land via the async pool."""
-    await db.upsert_user(111)
-    sid = await db.create_session(111, "vacancy_to_candidates")
-    rid = await db.create_run(sid, 111, "vacancy_to_candidates")
-
-    async def insert(n: int):
-        await db.insert_candidates(
-            rid, 111,
-            [{"linkedin_url": f"https://li/c{n}", "name": f"C{n}"}],
-        )
-
-    await asyncio.gather(*(insert(n) for n in range(10)))
-
-    async with db._pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT COUNT(*) AS n FROM candidates_found WHERE run_id = $1", rid
-        )
-    assert row["n"] == 10
+# Concurrency test was removed at step_8 — it inserted into candidates_found,
+# which is dropped in migration 002. A new concurrency test against the
+# relational model (upsert_candidate via asyncio.gather) lives in
+# test_db_relational.py.
