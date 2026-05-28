@@ -167,4 +167,36 @@
 - **Тесты пока в SQLite-формате** → падают на импорте/фикстурах. Чинится на
   step_5.
 
+### step_5 (2026-05-28)
+
+- **pytest.ini**: `asyncio_mode = auto` + `testpaths = tests`. Это позволяет
+  писать `async def test_X(db)` без декоратора на каждый тест.
+- **`tests/conftest.py`**: `db` фикстура создаёт уникальную PG-схему
+  (`test_<uuid8>`), привязывает пул только к ней, применяет `schema.sql`,
+  отдаёт `DB(pool)`. Teardown — `DROP SCHEMA ... CASCADE`. Полная изоляция
+  без docker/testcontainers.
+- **Тесты переписаны** на async/await:
+  - `test_db_client.py`: 24 теста (один удалён — `test_wal_mode_enabled`,
+    sqlite-only). 89 → 89 итого (со старых 90 минус WAL-тест).
+  - `test_handlers.py`: 12 тестов, локальная `db` фикстура удалена
+    (берётся из conftest), `asyncio.run(handlers.cmd_X)` → просто `await`.
+  - `test_pipelines_resume.py`: 2 теста, аналогично.
+- **Грабли №1 (важно!):** `asyncpg.create_pool(init=...)` запускает callback
+  **только один раз при создании соединения**. После release asyncpg делает
+  RESET сессии (включая search_path). Если использовать `init` для
+  `SET search_path` — второй acquire вернёт дефолт `"$user", public` и
+  insert'ы пойдут в **public**, не в тестовую схему. Это потенциально
+  фатально (тесты могли бы писать в боевую БД бота, нарушая FK).
+  **Правильно**: `server_settings={"search_path": schema}` —
+  применяется на стартапе и переживает RESET.
+- **Грабли №2 (мелкое):** `INSERT INTO _migrations ... ON CONFLICT` в
+  `initialize_from_schema` теперь не падает на повторном `--init`. Тесты
+  каждый раз делают fresh init — без conflict-handling сыпались бы дубли
+  (но в нашей схеме per-test это маловероятно, оставили для устойчивости).
+- **SQLite-артефакты удалены**: `data/recruiter_assistant.db{,.db-shm,.db-wal}`.
+  `data/sessions/` сохранены (там реальные raw_apify.json от прошлых
+  прогонов, нужны для resume).
+- **Прогон**: 89 passed in 14s. Каждый db-тест делает CREATE/DROP SCHEMA —
+  средняя стоимость теста ~150мс. Приемлемо.
+
 ---

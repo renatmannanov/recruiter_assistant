@@ -4,6 +4,8 @@ These cover /cancel, /status, the unknown-command and no-session replies,
 and that a running pipeline does not block other handlers (async check).
 A live polling test in Telegram complements this; here we mock python-
 telegram-bot's Update/Context so the logic is exercised without a network.
+
+The `db` fixture comes from conftest.py and points at a per-test PG schema.
 """
 
 import asyncio
@@ -13,15 +15,6 @@ import pytest
 
 from bot import auth, handlers, replies
 from bot.state_machine import SessionStep
-from db.client import DB
-
-
-@pytest.fixture
-def db(tmp_path):
-    d = DB(str(tmp_path / "test.db"))
-    d.initialize_from_schema()
-    yield d
-    d.close()
 
 
 @pytest.fixture
@@ -86,33 +79,32 @@ def _last_reply(update: FakeUpdate) -> str:
 
 # --------------------------------------------------------------------- auth
 
-def test_unauthorized_user_blocked(db, whitelisted):
+async def test_unauthorized_user_blocked(db, whitelisted):
     update = FakeUpdate(uid=111111)  # not whitelisted
-    ctx = FakeContext(db)
-    asyncio.run(handlers.cmd_start(update, ctx))
+    await handlers.cmd_start(update, FakeContext(db))
     assert _last_reply(update) == replies.UNAUTHORIZED
 
 
-def test_start_creates_user(db, whitelisted):
+async def test_start_creates_user(db, whitelisted):
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_start(update, FakeContext(db)))
-    assert db.get_user(whitelisted) is not None
+    await handlers.cmd_start(update, FakeContext(db))
+    assert await db.get_user(whitelisted) is not None
     assert _last_reply(update) == replies.WELCOME
 
 
 # ------------------------------------------------------------------ /status
 
-def test_status_no_session(db, whitelisted):
+async def test_status_no_session(db, whitelisted):
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_status(update, FakeContext(db)))
+    await handlers.cmd_status(update, FakeContext(db))
     assert _last_reply(update) == replies.STATUS_NO_SESSION
 
 
-def test_status_with_active_session(db, whitelisted):
-    db.upsert_user(whitelisted, "Renat")
-    sid = db.create_session(whitelisted, "vacancy_to_candidates")
+async def test_status_with_active_session(db, whitelisted):
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "vacancy_to_candidates")
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_status(update, FakeContext(db)))
+    await handlers.cmd_status(update, FakeContext(db))
     reply = _last_reply(update)
     assert str(sid) in reply
     assert "vacancy_to_candidates" in reply
@@ -120,52 +112,52 @@ def test_status_with_active_session(db, whitelisted):
 
 # ------------------------------------------------------------------ /cancel
 
-def test_cancel_nothing_to_cancel(db, whitelisted):
-    db.upsert_user(whitelisted, "Renat")
+async def test_cancel_nothing_to_cancel(db, whitelisted):
+    await db.upsert_user(whitelisted, "Renat")
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_cancel(update, FakeContext(db)))
+    await handlers.cmd_cancel(update, FakeContext(db))
     assert _last_reply(update) == replies.NOTHING_TO_CANCEL
 
 
-def test_cancel_active_session(db, whitelisted):
-    db.upsert_user(whitelisted, "Renat")
-    sid = db.create_session(whitelisted, "cv_to_jobs")
+async def test_cancel_active_session(db, whitelisted):
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "cv_to_jobs")
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_cancel(update, FakeContext(db)))
+    await handlers.cmd_cancel(update, FakeContext(db))
     assert _last_reply(update) == replies.SESSION_CANCELLED
-    assert db.get_session(sid)["step"] == SessionStep.CANCELLED.value
+    assert (await db.get_session(sid))["step"] == SessionStep.CANCELLED.value
     # The cancelled session is no longer "active".
-    assert db.get_active_session(whitelisted) is None
+    assert await db.get_active_session(whitelisted) is None
 
 
-def test_refind_cancels_previous_session(db, whitelisted):
-    db.upsert_user(whitelisted, "Renat")
-    old = db.create_session(whitelisted, "vacancy_to_candidates")
+async def test_refind_cancels_previous_session(db, whitelisted):
+    await db.upsert_user(whitelisted, "Renat")
+    old = await db.create_session(whitelisted, "vacancy_to_candidates")
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_refind_candidate(update, FakeContext(db)))
-    assert db.get_session(old)["step"] == SessionStep.CANCELLED.value
-    new = db.get_active_session(whitelisted)
+    await handlers.cmd_refind_candidate(update, FakeContext(db))
+    assert (await db.get_session(old))["step"] == SessionStep.CANCELLED.value
+    new = await db.get_active_session(whitelisted)
     assert new["pipeline_type"] == "cv_to_jobs"
 
 
 # ------------------------------------------------------------- unknown / text
 
-def test_unknown_command(db, whitelisted):
+async def test_unknown_command(db, whitelisted):
     update = FakeUpdate(uid=whitelisted)
-    asyncio.run(handlers.cmd_unknown(update, FakeContext(db)))
+    await handlers.cmd_unknown(update, FakeContext(db))
     assert _last_reply(update) == replies.UNKNOWN_COMMAND
 
 
-def test_text_without_session(db, whitelisted):
-    db.upsert_user(whitelisted, "Renat")
+async def test_text_without_session(db, whitelisted):
+    await db.upsert_user(whitelisted, "Renat")
     update = FakeUpdate(uid=whitelisted, text="some random text")
-    asyncio.run(handlers.on_text(update, FakeContext(db)))
+    await handlers.on_text(update, FakeContext(db))
     assert _last_reply(update) == replies.NO_SESSION
 
 
-def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
-    db.upsert_user(whitelisted, "Renat")
-    sid = db.create_session(whitelisted, "vacancy_to_candidates")
+async def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "vacancy_to_candidates")
     update = FakeUpdate(uid=whitelisted, text="Senior Python role")
 
     # generate_boolean now calls OpenAI — replace it with a deterministic stub
@@ -174,8 +166,8 @@ def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
         return "(\"Python\") AND (\"Senior\")"
     monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_generate_boolean)
 
-    asyncio.run(handlers.on_text(update, FakeContext(db)))
-    session = db.get_session(sid)
+    await handlers.on_text(update, FakeContext(db))
+    session = await db.get_session(sid)
     assert session["step"] == SessionStep.WAITING_BOOLEAN_CONFIRM.value
     assert session["input_text"] == "Senior Python role"
     assert session["boolean_text_original"]  # boolean stored
@@ -183,27 +175,25 @@ def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
 
 # ---------------------------------------------------------- async non-blocking
 
-def test_status_responds_while_pipeline_running(db, whitelisted, monkeypatch):
+async def test_status_responds_while_pipeline_running(db, whitelisted, monkeypatch):
     """A long pipeline must not block /status — the run handler is a task."""
-    db.upsert_user(whitelisted, "Renat")
-    sid = db.create_session(whitelisted, "vacancy_to_candidates")
-    db.update_session(sid, step=SessionStep.RUNNING.value)
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "vacancy_to_candidates")
+    await db.update_session(sid, step=SessionStep.RUNNING.value)
 
-    async def scenario():
-        # Simulate a slow background pipeline.
-        async def slow_pipeline():
-            await asyncio.sleep(1.0)
+    # Simulate a slow background pipeline.
+    async def slow_pipeline():
+        await asyncio.sleep(1.0)
 
-        pipeline_task = asyncio.create_task(slow_pipeline())
+    pipeline_task = asyncio.create_task(slow_pipeline())
 
-        # /status must return immediately, well before the pipeline finishes.
-        update = FakeUpdate(uid=whitelisted)
-        await asyncio.wait_for(
-            handlers.cmd_status(update, FakeContext(db)), timeout=0.3
-        )
-        assert not pipeline_task.done()  # pipeline still running
-        await pipeline_task
-        return _last_reply(update)
+    # /status must return immediately, well before the pipeline finishes.
+    update = FakeUpdate(uid=whitelisted)
+    await asyncio.wait_for(
+        handlers.cmd_status(update, FakeContext(db)), timeout=0.3
+    )
+    assert not pipeline_task.done()  # pipeline still running
+    await pipeline_task
 
-    reply = asyncio.run(scenario())
+    reply = _last_reply(update)
     assert str(sid) in reply
