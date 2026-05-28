@@ -199,4 +199,37 @@
 - **Прогон**: 89 passed in 14s. Каждый db-тест делает CREATE/DROP SCHEMA —
   средняя стоимость теста ~150мс. Приемлемо.
 
+### step_6 (2026-05-28)
+
+- **E2E на PG прошёл успешно.** JD: "Senior Python Engineer, Germany,
+  FastAPI, async, PostgreSQL. Remote ok." Ренат прошёл через
+  `/start` → `/refind_vacancy` → JD → boolean → "ок" → отчёт.
+- **Цифры session 28 / run 10:**
+  - found_count: 25
+  - screened_count: 25
+  - passed_count: 8 (pass:2 + uncertain:6 в БД)
+  - fail (skip): 17
+  - cost_usd: $0.7442
+  - duration_sec: 201.8 (3:22)
+  - report_path: data/sessions/28/report.md
+  - sessions.step = 'done', runs.status = 'done', error_text = NULL
+- **Сравнение с историческим Sonia (session 4 на SQLite):**
+  25 кандидатов, GO:6/MAYBE:6/SKIP:13, $0.80. Похожий профиль выдачи —
+  пайплайн ведёт себя одинаково на PG и SQLite.
+- **Найденный пользователем баг:** локация из JD ("Germany") НЕ
+  учитывается в boolean — в выдаче кандидаты из всех стран. Записано
+  в `task_tracker/backlog/step_5_backlog.md` под "Locations / experience
+  / seniority" (уже существующий пункт, добавлен подтверждающий комментарий).
+  Это **не блокер фазы 1** — функциональность пайплайна работает, баг
+  про качество выдачи. Чинится в отдельном спринте после фазы 2.
+- **Шум в БД:** users=3, sessions=28, runs=10, candidates_found=35 — следы
+  от smoke-tests step_3/4 и тестовых TG-сессий. Не критично, но при
+  переходе на фазу 2 разумно сделать `TRUNCATE` (без миграции данных).
+
 ---
+
+## Фаза 1 закрыта ✅
+
+Steps 1-6 готовы. Бот работает на Postgres end-to-end, тесты зелёные,
+e2e через Telegram подтверждён. Следующее — фаза 2 (steps 7-13):
+новая реляционная модель + команды бота.
