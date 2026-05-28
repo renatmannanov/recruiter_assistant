@@ -113,4 +113,37 @@
 - **Тесты на этом шаге не запускаются** — `db/client.py` ещё sqlite-based,
   будет переписан на step_3.
 
+### step_3 (2026-05-28)
+
+- **Полностью переписан `db/client.py` на asyncpg.** Конструктор теперь
+  принимает `asyncpg.Pool`, экземпляр строится через async фабрику
+  `await DB.connect()`. Поддержан async context manager (`async with`).
+- **DSN-builder**: `DATABASE_URL` имеет приоритет; иначе сборка из
+  `PG_HOST/PG_PORT/PG_USER/PG_PASSWORD/PG_DATABASE`. Пароль/юзер URL-encoded
+  через `urllib.parse.quote` — на случай спецсимволов.
+- **Все методы async**, плейсхолдеры `?` → `$1...$N`. Сохранили публичный
+  API (имена, параметры, возврат) — step_4 ждёт минимальных изменений.
+- **`create_session` / `create_run`**: вместо `cur.lastrowid` (sqlite-only)
+  используем `INSERT ... RETURNING id` — стандартный PG-приём.
+- **`update_session` / `update_run`**: динамическая сборка SQL с
+  нумерованными плейсхолдерами (`SET col = $1, ...` + WHERE `id = $(N+1)`).
+- **`cleanup_stale_sessions`**: `datetime('now', '-N minutes')` SQLite →
+  `now() - make_interval(mins => $1)` PG. Парсим status string
+  asyncpg (`"UPDATE 3"`) для возврата rowcount.
+- **`initialize_from_schema` / `apply_migrations`**: обёрнуты в
+  `async with conn.transaction()`. asyncpg умеет multi-statement в
+  `execute()` нативно — никакого `executescript` / split не нужно.
+- **CLI** через `asyncio.run(_amain())`; `DB.connect` вызывается без аргументов,
+  `async with await DB.connect() as db: ...`. `--db-path` аргумент удалён
+  (теперь всё через env).
+- **Smoke**: init → `_migrations` фиксирует `001_initial.sql`,
+  `apply_migrations` → пусто, upsert/get юзера 123 → OK, очистка прошла.
+  CLI `--init` и `--migrate` работают.
+- **`bot/main.py` пока не запустится** — его вызовы `DB(path)` и sync
+  методы остались старые. Это step_4.
+- **Unit-тесты НЕ запускаем** — они на sqlite-API. Переключим fixture на
+  step_5.
+- **Не сделано (намеренно):** транзакций для bulk-insert candidates/vacancies
+  пока нет — план оставил это на потом ("без транзакции в первой версии").
+
 ---
