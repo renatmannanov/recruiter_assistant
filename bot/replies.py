@@ -37,8 +37,13 @@ PIPELINE_STARTED = (
 
 PIPELINE_DONE = (
     "✅ Готово. Сессия #{session_id}\n\n"
-    "Найдено: {found}, прошли скрининг: {screened}, прошли: {passed}\n\n"
-    "Отчёт — в файле ниже."
+    "Всего найдено в Apify: {total_found}\n"
+    "Взяли в работу: {found} кандидатов\n"
+    "Прошли скрининг: {screened}\n"
+    "GO: {go}\n"
+    "MAYBE: {maybe}\n"
+    "SKIP: {skip}\n\n"
+    "Подробный отчёт в файле ниже."
 )
 
 PIPELINE_FAILED = (

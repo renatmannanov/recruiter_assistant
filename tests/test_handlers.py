@@ -163,15 +163,22 @@ def test_text_without_session(db, whitelisted):
     assert _last_reply(update) == replies.NO_SESSION
 
 
-def test_text_in_waiting_input_generates_boolean(db, whitelisted):
+def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
     db.upsert_user(whitelisted, "Renat")
     sid = db.create_session(whitelisted, "vacancy_to_candidates")
     update = FakeUpdate(uid=whitelisted, text="Senior Python role")
+
+    # generate_boolean now calls OpenAI — replace it with a deterministic stub
+    # for the handler test (the real call is covered in step_5 e2e).
+    async def fake_generate_boolean(input_text, brief_text, pipeline_type):
+        return "(\"Python\") AND (\"Senior\")"
+    monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_generate_boolean)
+
     asyncio.run(handlers.on_text(update, FakeContext(db)))
     session = db.get_session(sid)
     assert session["step"] == SessionStep.WAITING_BOOLEAN_CONFIRM.value
     assert session["input_text"] == "Senior Python role"
-    assert session["boolean_text_original"]  # stub boolean stored
+    assert session["boolean_text_original"]  # boolean stored
 
 
 # ---------------------------------------------------------- async non-blocking

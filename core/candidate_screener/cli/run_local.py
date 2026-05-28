@@ -27,13 +27,12 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 from openai import OpenAI
 
 from core.utils.env import load_project_env
-from ..core import screen_candidate, parse_score, parse_recommendation, format_markdown_report
+from ..core import screen_candidates
 from ..core.profile_cleaner import clean_profile
 from ..sources.from_json import load_profiles
 
@@ -161,39 +160,24 @@ def main():
 
     client = OpenAI(api_key=api_key)
 
-    # Screen each candidate
-    results = []
-    total_tokens = 0
-
     print(f"\nScreening {len(profiles)} candidates...\n")
 
-    for i, profile in enumerate(profiles, 1):
-        name = f"{profile.get('firstName', '')} {profile.get('lastName', '')}".strip()
-        line = f"  [{i}/{len(profiles)}] {name}..."
-        print(line.encode("ascii", "replace").decode(), end=" ", flush=True)
+    def _print_progress(i, total, name, score, recommendation, usage_total):
+        line = f"  [{i}/{total}] {name}... Score: {score}/10 ({recommendation}) [{usage_total} tok]"
+        print(line.encode("ascii", "replace").decode())
 
-        start = time.time()
-        evaluation, usage = screen_candidate(
-            client, vacancy_text, profile, args.model, internal_brief=brief_text,
-        )
-        elapsed = time.time() - start
-
-        score = parse_score(evaluation)
-        recommendation = parse_recommendation(evaluation)
-        total_tokens += usage["total_tokens"]
-
-        cleaned = clean_profile(profile)
-        results.append({
-            "name": cleaned["name"],
-            "linkedin_url": cleaned["linkedin_url"],
-            "headline": cleaned["headline"],
-            "location": cleaned["location"],
-            "score": score,
-            "recommendation": recommendation,
-            "evaluation": evaluation,
-        })
-
-        print(f"Score: {score}/10 ({recommendation}) [{elapsed:.1f}s, {usage['total_tokens']} tok]")
+    screening = screen_candidates(
+        client=client,
+        profiles=profiles,
+        vacancy_text=vacancy_text,
+        brief_text=brief_text,
+        vacancy_name=Path(args.vacancy).stem,
+        model=args.model,
+        on_progress=_print_progress,
+    )
+    results = screening["results"]
+    total_tokens = screening["total_tokens"]
+    report = screening["report_md"]
 
     # Optional: push results to Notion as new pages
     # Pre-screening dedup already filtered out existing — this is a final safety check
@@ -238,9 +222,6 @@ def main():
                 print(msg.encode("ascii", "replace").decode(), file=sys.stderr)
 
         print(f"\nNotion: {created_count} created, {skipped_count} skipped (already exist)")
-
-    # Report
-    report = format_markdown_report(results, vacancy_name, args.model, total_tokens)
 
     print(f"\n{'=' * 40}")
     print(f"Total tokens: {total_tokens:,}")

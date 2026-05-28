@@ -158,7 +158,7 @@ LLM-агент-помощник — в бэклог v2 (вернём если п
 - [x] step_4_bot_scaffold.md — структура `bot/` (7 модулей), state machine (без WAITING_BRIEF), заглушки пайплайнов, polling. 82 юнит-теста, живой polling-тест пройден
 
 ### Шаг 5: Интеграция с пайплайнами (vacancy → candidates)
-- [ ] step_5_vacancy_pipeline.md — extractors (1-2 файла), обёртка над `boolean_generator`, обёртка над `discover` + `run_local`, SQLite-dedup, отдача report.md в TG
+- [x] step_5_vacancy_pipeline.md — выделены `core/.../core/discover.py` (pure Apify search) и `core/.../core/screen_runner.py` (pure screening loop), `cli/run_local.py` использует `screen_candidates`. `bot/pipelines.py` подменены заглушки: `generate_boolean` зовёт OpenAI через `generate_boolean_search`+`extract_boolean`, `run_pipeline` выполняет discover → SQLite dedup → screen → report.md, файлы в `data/sessions/<id>/`. handlers передают `run_id` + `db` в `run_pipeline`, `complete_run` получает реальные `cost_usd`/`duration_sec`. 82 юнит-теста зелёные. Открытые темы (Apify cost real, Apify params, vacancy_name) — в `task_tracker/backlog/step_5_backlog.md`. **E2E с реальным Apify ещё не запущен.**
 
 ### Шаг 6: Интеграция с пайплайнами (cv → jobs)
 - [ ] step_6_cv_pipeline.md — extractors для CV, рефакторинг `cv_parser.parse_cv()` для приёма текста, обёртка над `boolean_generator --target jobs`, обёртка над `run_jobs`, отдача report.md в TG

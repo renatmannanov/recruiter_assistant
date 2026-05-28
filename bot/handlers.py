@@ -337,23 +337,29 @@ async def _run_pipeline_task(
     user_id = chat_id
     run_id = db.create_run(session_id, user_id, pipeline_type)
     try:
-        result = await pipelines.run_pipeline(session_id, pipeline_type)
+        result = await pipelines.run_pipeline(
+            session_id, pipeline_type, run_id=run_id, db=db,
+        )
         db.complete_run(
             run_id,
             found_count=result["found"],
             screened_count=result["screened"],
             passed_count=result["passed"],
-            cost_usd=0.0,
-            duration_sec=0.0,
+            cost_usd=result["cost_usd"],
+            duration_sec=result["duration_sec"],
         )
         db.complete_session(session_id, result["report_path"])
+        total_found = result.get("total_found")
         await context.bot.send_message(
             chat_id,
             replies.PIPELINE_DONE.format(
                 session_id=session_id,
+                total_found=total_found if total_found is not None else "?",
                 found=result["found"],
                 screened=result["screened"],
-                passed=result["passed"],
+                go=result.get("go", 0),
+                maybe=result.get("maybe", 0),
+                skip=result.get("skip", 0),
             ),
         )
         with open(result["report_path"], "rb") as fh:

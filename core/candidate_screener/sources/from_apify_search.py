@@ -21,6 +21,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +30,26 @@ from apify_client import ApifyClient
 from core.utils.env import load_project_env
 
 ACTOR_ID = "harvestapi/linkedin-profile-search"
+
+# Pulled out of the actor's stdout log — the actor prints e.g.
+#   "Found 4510 profiles total for input ..."
+# right after submitting the LinkedIn query. The HTTP API does not return
+# this count directly, so we parse the log.
+_TOTAL_FOUND_RE = re.compile(r"Found\s+(\d+)\s+profiles\s+total", re.IGNORECASE)
+
+
+def _extract_total_found(apify_client: ApifyClient, run_id: str) -> int | None:
+    """Read the actor log and pull out the 'Found N profiles total' line.
+
+    Returns None if the log can't be read or the line isn't there — callers
+    should treat this as 'unknown total' and fall back to len(items).
+    """
+    try:
+        log_text = apify_client.log(run_id).get() or ""
+    except Exception:
+        return None
+    m = _TOTAL_FOUND_RE.search(log_text)
+    return int(m.group(1)) if m else None
 
 SENIORITY_MAP = {
     "training": "100",
@@ -129,8 +150,10 @@ def search_linkedin_profiles(
 
     items = client.dataset(run["defaultDatasetId"]).list_items().items
 
-    # Try to extract total count from logs
-    total = len(items)
+    # Total LinkedIn matches for the query (not just what we scraped on this
+    # page). Comes from the actor's log — see _extract_total_found docstring.
+    total_found = _extract_total_found(client, run["id"])
+    total = total_found if total_found is not None else len(items)
 
     return items, total
 
