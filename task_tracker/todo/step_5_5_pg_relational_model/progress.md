@@ -233,3 +233,45 @@
 Steps 1-6 готовы. Бот работает на Postgres end-to-end, тесты зелёные,
 e2e через Telegram подтверждён. Следующее — фаза 2 (steps 7-13):
 новая реляционная модель + команды бота.
+
+### step_7 (2026-05-28)
+
+- **TRUNCATE боевой БД** перед миграцией: `TRUNCATE users, sessions, runs,
+  candidates_found, vacancies_found RESTART IDENTITY CASCADE`. Снесено
+  3 user / 28 sessions / 10 runs / 35 candidates_found / 1 vacancies_found
+  (всё тестовое от step_3..step_6). `_migrations` сохранена.
+- **Миграция `db/migrations/002_relational_model.sql`** применена через
+  `python -m db.client --migrate`. Состав:
+  - ENUM-типы: `ai_status` (pass/uncertain/fail), `vacancy_source`
+    (manual/apify_job_search)
+  - Новые таблицы: `companies`, `vacancies`, `candidates`, `searches`,
+    `candidate_screenings`
+  - `vacancies.linkedin_url`: **partial UNIQUE** `WHERE
+    source='apify_job_search'`. Manual-вакансии (linkedin_url=NULL) не
+    конфликтуют. Симметрично `candidates.linkedin_url UNIQUE` —
+    одна job-страница LinkedIn = одна глобальная строка.
+  - `searches.original_boolean`: NULL когда юзер не правил boolean
+    (не дублируем `boolean_text`).
+  - `candidates.raw_profile_json`: JSONB (переезд с TEXT).
+  - `sessions`: убраны `input_text`, `brief_text`, `boolean_text`,
+    `boolean_text_original`; добавлены `vacancy_id`, `search_id` (FK).
+  - DROP `candidates_found`, `vacancies_found` (с CASCADE, чтобы FK на runs
+    не блокировали).
+- **Верификация**: 9 таблиц в `public`, оба ENUM-типа, JSONB-колонка,
+  partial UNIQUE-индекс — все на месте. `_migrations` содержит обе
+  миграции.
+- **Грабля для step_8/9 — расхождение тест-фикстура vs боевая схема:**
+  `tests/conftest.py` зовёт `db.client.initialize_from_schema()`, который
+  читает `db/schema.sql` (= **старая** v1-схема) и одновременно записывает
+  все файлы миграций как "уже применённые". Тесты сейчас 89/89 зелёные
+  **на старой схеме**, в то время как боевая БД уже на новой. До step_9
+  (когда `db/client.py` начнёт писать в новую модель) надо выбрать один
+  из:
+    - **(а)** обновить `db/schema.sql` под актуальное состояние (= схема
+      после 002), а 002 оставить как историческую миграцию;
+    - **(б)** фикстура применяет `initialize_from_schema` (= только v1) +
+      затем `apply_migrations` руками;
+    - **(в)** комбинированно: `schema.sql` всегда = "что должно быть в
+      свежей БД", миграции остаются как путь апгрейда.
+  Решение зафиксируем в step_8.
+- **Коммит**: `feat(db): step 5.5.7 — relational model migration` (далее).
