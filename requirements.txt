@@ -8,6 +8,9 @@ requests>=2.28.0
 # Telegram bot
 python-telegram-bot>=21.0
 
+# Database (Postgres async driver, step_5.5+)
+asyncpg>=0.29
+
 # Tests
 pytest>=8.0
 pytest-asyncio>=0.23
