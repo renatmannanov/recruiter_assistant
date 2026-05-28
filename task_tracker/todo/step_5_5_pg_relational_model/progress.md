@@ -90,4 +90,27 @@
 - **Активные коннекции rm_mini пережили restart** — клиент переподключился
   автоматически.
 
+### step_2 (2026-05-28)
+
+- **Замены диалекта** ровно как в плане:
+  - `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGSERIAL PRIMARY KEY`
+  - `TEXT NOT NULL DEFAULT (datetime('now'))` → `TIMESTAMPTZ NOT NULL DEFAULT now()`
+  - `INTEGER` → `BIGINT` (включая `telegram_user_id`, который **без** SERIAL —
+    natural key из Telegram)
+  - `REAL` → `DOUBLE PRECISION`
+  - `PRAGMA foreign_keys = ON;` удалена (в PG FK всегда форсятся)
+- **CHECK-constraints** оставлены текстовыми (как в SQLite), не ENUM — ENUM
+  планируется в фазе 2 (step_7).
+- **`raw_profile_json` / `raw_job_json`** оставлены TEXT — фаза 2 переведёт
+  на JSONB.
+- **`db/schema.sql`** содержит все 6 таблиц (с `_migrations`),
+  **`db/migrations/001_initial.sql`** — те же 5 без `_migrations` (она
+  создаётся в init через schema.sql).
+- **Smoke-test:** schema применилась идемпотентно, все 6 таблиц видны через
+  `pg_tables`, типы колонок подтверждены через `information_schema.columns`
+  (`bigint`, `timestamp with time zone`, `double precision`).
+- **Lint:** в `db/*.sql` нет AUTOINCREMENT / PRAGMA / datetime.
+- **Тесты на этом шаге не запускаются** — `db/client.py` ещё sqlite-based,
+  будет переписан на step_3.
+
 ---
