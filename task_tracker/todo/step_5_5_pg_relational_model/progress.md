@@ -339,3 +339,68 @@ e2e через Telegram подтверждён. Следующее — фаза 
   упадёт). Step_9 чинит это, переписывая handler/pipelines на новую
   модель и снимая `skip` с тестов.
 - **Коммит**: `feat(db): step 5.5.8 — CRUD methods for new relational model`.
+
+### step_9 (2026-05-28)
+
+- **Решение по `pending_boolean` (развилка из step_7):** выбран вариант
+  (а) — отдельная **миграция 003** `ALTER TABLE sessions ADD COLUMN
+  pending_boolean TEXT`. Альтернатива (б) — создавать `searches`
+  сразу — отвергнута: `searches` представляет коммитнутый запрос,
+  не должна содержать черновики (особенно при `/cancel`). История
+  миграций (`002`) **не переписывалась** — она уже закоммичена в
+  `a326231`, ретроспективная правка опасна.
+- **schema.sql v3** обновлён (sessions.pending_boolean добавлен в
+  соответствии с конвенцией step_8 — schema.sql всегда = снимок
+  актуального состояния).
+- **`_COLUMNS["sessions"]`** в `db/client.py` пополнен `pending_boolean`.
+- **`bot/handlers.py` переписан под новую модель:**
+  - `_generate_boolean_and_advance(db, session, user_id, input_text,
+    brief_text, say)` — добавлен параметр `user_id`. Создаёт
+    `vacancies`-строку (`source='manual'`, name=`f"vacancy_{session_id}"`)
+    **до** генерации boolean (vacancy_id потом сохраняется в session
+    одним UPDATE'ом вместе с pending_boolean).
+  - Ветка `WAITING_BOOLEAN_CONFIRM` создаёт `searches`-строку и проставляет
+    `session.search_id`. `pending_boolean` обнуляется. Если юзер правил
+    boolean — `searches.original_boolean` = LLM-вывод, иначе NULL
+    (семантика подтверждена в step_7). Сравнение `pending != boolean`
+    защищает от случая «юзер прислал тот же текст что и LLM» (тогда
+    `original_boolean = NULL`, не дубль).
+- **`bot/pipelines.py` переписан:**
+  - `_run_vacancy_pipeline` читает `vacancy_id`/`search_id` из
+    `session`, дёргает `db.get_vacancy` и `db.get_search` — boolean
+    теперь берётся из `searches.boolean_text`, JD/brief — из
+    `vacancies.jd_text/brief_text`. Если `vacancy_id` или `search_id`
+    NULL — `RuntimeError` (защита от вызова до подтверждения).
+  - `vacancy_name` в `screen_candidates(vacancy_name=...)` теперь берётся
+    из `vacancy["name"]` (см. backlog — извлечение сводки из LLM
+    отложено).
+  - **Two-axis dedup:** для каждого профиля сначала
+    `is_candidate_screened_for_vacancy(url, vacancy_id)` (skip без LLM
+    если уже было); затем `is_candidate_known_to_user(user_id, url)`
+    (счётчик "already_seen", но НЕ skip — другая вакансия = другой
+    результат).
+  - **Запись результата:** `_persist_screenings` — новая helper-функция.
+    Для каждой пары `(profile, db_row)` (zip strict — гарантия что
+    screen_candidates возвращает rows в порядке profiles):
+    `upsert_candidate(profile)` → `create_screening(candidate_id,
+    vacancy_id, run_id, user_id, ai_*)`. Глобальная база +
+    join-таблица.
+  - В `result` добавлены `already_seen` (cross-vacancy для user) и
+    `skipped_same_vacancy` (per-vacancy dedup). Поле `already_seen`
+    пока **не** показывается юзеру в `PIPELINE_DONE` — это пункт
+    backlog'а (формулировку обсудить, выбрать на step_10/11).
+- **Тесты:**
+  - `tests/test_handlers.py`: skip-нутый `test_text_in_waiting_input_*`
+    переписан как 3 новых теста (vacancy создаётся, confirm создаёт
+    search, edit создаёт search с original_boolean).
+  - `tests/test_pipelines_resume.py`: оба skip-нутых теста переписаны,
+    `_seed_session_with_input` → `_seed_running_session` (новая модель).
+  - **Новый файл `tests/test_pipelines_new_model.py` — 4 теста:**
+    happy-path landing в новые таблицы; per-vacancy dedup пропускает
+    LLM; per-user already_seen считается без skip'а скрининга;
+    `search_id IS NULL` → RuntimeError.
+  - **Итог: 107 passed, 0 skipped, 0 failed** (было 98 / 3 skip в step_8).
+- **Smoke-старт бота:** `python -m bot.main` стартует чисто — БД
+  подключается, polling запускается, `getUpdates` уходит к Telegram.
+  Реальный TG e2e — на step_12.
+- **Коммит**: `feat(bot): step 5.5.9 — pipelines/handlers on new relational model`.

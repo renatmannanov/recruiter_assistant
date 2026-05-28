@@ -525,7 +525,7 @@ class DB:
     _COLUMNS = {
         "sessions": {
             "user_id", "pipeline_type", "step", "vacancy_id", "search_id",
-            "report_path", "error_text",
+            "pending_boolean", "report_path", "error_text",
         },
         "runs": {
             "session_id", "user_id", "pipeline_type", "status",

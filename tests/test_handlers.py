@@ -155,11 +155,12 @@ async def test_text_without_session(db, whitelisted):
     assert _last_reply(update) == replies.NO_SESSION
 
 
-@pytest.mark.skip(
-    reason="step_9 rewrites this handler to create vacancy+search rows instead "
-           "of writing to sessions.input_text/boolean_text*; revisit then."
-)
-async def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypatch):
+async def test_text_in_waiting_input_creates_vacancy_and_pending_boolean(
+    db, whitelisted, monkeypatch
+):
+    """JD text in WAITING_INPUT must create a manual vacancy, store the
+    LLM-generated boolean in sessions.pending_boolean, and link the session
+    to the vacancy."""
     await db.upsert_user(whitelisted, "Renat")
     sid = await db.create_session(whitelisted, "vacancy_to_candidates")
     update = FakeUpdate(uid=whitelisted, text="Senior Python role")
@@ -169,10 +170,82 @@ async def test_text_in_waiting_input_generates_boolean(db, whitelisted, monkeypa
     monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_generate_boolean)
 
     await handlers.on_text(update, FakeContext(db))
+
     session = await db.get_session(sid)
     assert session["step"] == SessionStep.WAITING_BOOLEAN_CONFIRM.value
-    assert session["input_text"] == "Senior Python role"
-    assert session["boolean_text_original"]
+    assert session["vacancy_id"] is not None
+    assert session["search_id"] is None  # not yet — created on confirm
+    assert session["pending_boolean"] == "(\"Python\") AND (\"Senior\")"
+
+    vacancy = await db.get_vacancy(session["vacancy_id"])
+    assert vacancy["source"] == "manual"
+    assert vacancy["jd_text"] == "Senior Python role"
+    assert vacancy["created_by_user_id"] == whitelisted
+
+
+async def test_confirm_word_creates_search_unchanged(
+    db, whitelisted, monkeypatch
+):
+    """`ок` after boolean generation must create a search row with the
+    pending boolean and clear pending_boolean. original_boolean is NULL
+    because the user did not edit."""
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "vacancy_to_candidates")
+
+    async def fake_gen(*a, **k):
+        return "(Python)"
+    monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_gen)
+    # Block the background pipeline kick-off so it doesn't run for real.
+    monkeypatch.setattr(handlers, "_kick_off_pipeline", lambda *a, **k: None)
+
+    # Step 1: arrive at WAITING_BOOLEAN_CONFIRM.
+    await handlers.on_text(
+        FakeUpdate(uid=whitelisted, text="JD here"), FakeContext(db),
+    )
+    # Step 2: user confirms.
+    await handlers.on_text(
+        FakeUpdate(uid=whitelisted, text="ок"), FakeContext(db),
+    )
+
+    session = await db.get_session(sid)
+    assert session["step"] == SessionStep.RUNNING.value
+    assert session["pending_boolean"] is None
+    assert session["search_id"] is not None
+    search = await db.get_search(session["search_id"])
+    assert search["boolean_text"] == "(Python)"
+    assert search["original_boolean"] is None
+    assert search["vacancy_id"] == session["vacancy_id"]
+
+
+async def test_edited_boolean_creates_search_with_original(
+    db, whitelisted, monkeypatch
+):
+    """A non-confirm reply is the user's edited boolean; the LLM's text
+    moves into searches.original_boolean for audit."""
+    await db.upsert_user(whitelisted, "Renat")
+    await db.create_session(whitelisted, "vacancy_to_candidates")
+
+    async def fake_gen(*a, **k):
+        return "(Python)"
+    monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_gen)
+    monkeypatch.setattr(handlers, "_kick_off_pipeline", lambda *a, **k: None)
+
+    await handlers.on_text(FakeUpdate(uid=whitelisted, text="JD"), FakeContext(db))
+    await handlers.on_text(
+        FakeUpdate(uid=whitelisted, text="(Python) AND (async)"),
+        FakeContext(db),
+    )
+
+    session = await db.get_active_session(whitelisted)
+    # RUNNING is not "active" in get_active_session's filter — fetch by id.
+    sessions = await db._query_all(
+        "SELECT * FROM sessions WHERE user_id = $1 ORDER BY id DESC LIMIT 1",
+        whitelisted,
+    )
+    s = sessions[0]
+    search = await db.get_search(s["search_id"])
+    assert search["boolean_text"] == "(Python) AND (async)"
+    assert search["original_boolean"] == "(Python)"
 
 
 # ---------------------------------------------------------- async non-blocking

@@ -105,16 +105,17 @@ CREATE INDEX IF NOT EXISTS idx_candidates_last_seen ON candidates(last_seen_at D
 -- Thin state-machine row. Heavy text (JD, brief, boolean) lives in the entities
 -- it points to: vacancies (jd_text/brief_text) and searches (boolean_text).
 CREATE TABLE IF NOT EXISTS sessions (
-  id            BIGSERIAL PRIMARY KEY,
-  user_id       BIGINT NOT NULL REFERENCES users(telegram_user_id),
-  pipeline_type TEXT NOT NULL CHECK (pipeline_type IN ('vacancy_to_candidates', 'cv_to_jobs')),
-  step          TEXT NOT NULL CHECK (step IN ('waiting_input', 'waiting_boolean_confirm', 'running', 'done', 'error', 'cancelled')),
-  vacancy_id    BIGINT REFERENCES vacancies(id),
-  search_id     BIGINT,                  -- FK added after searches is defined (see ALTER below)
-  report_path   TEXT,                    -- path to the .md report on disk (data/sessions/<id>/report.md)
-  error_text    TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              BIGSERIAL PRIMARY KEY,
+  user_id         BIGINT NOT NULL REFERENCES users(telegram_user_id),
+  pipeline_type   TEXT NOT NULL CHECK (pipeline_type IN ('vacancy_to_candidates', 'cv_to_jobs')),
+  step            TEXT NOT NULL CHECK (step IN ('waiting_input', 'waiting_boolean_confirm', 'running', 'done', 'error', 'cancelled')),
+  vacancy_id      BIGINT REFERENCES vacancies(id),
+  search_id       BIGINT,                -- FK added after searches is defined (see ALTER below)
+  pending_boolean TEXT,                  -- LLM-generated boolean held between WAITING_INPUT and WAITING_BOOLEAN_CONFIRM; cleared after the user confirms (migration 003)
+  report_path     TEXT,                  -- path to the .md report on disk (data/sessions/<id>/report.md)
+  error_text      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user      ON sessions(user_id);

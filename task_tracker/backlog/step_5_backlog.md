@@ -54,6 +54,35 @@ LLM в `boolean_generator` уже строит короткую сводку в�
 Why: при работе с несколькими сессиями подряд отчёты `session_41`,
 `session_42`, `session_43` неотличимы — нужен человекочитаемый якорь.
 
+**Подтверждено снова на step_9 (2026-05-28):** в новой модели
+`vacancies.name` создаётся handler'ом как `f"vacancy_{session_id}"` —
+ровно та же проблема. Когда LLM начнёт отдавать сводку, заменить
+эту формулу на сводку (и заодно прописать в `vacancies.title` если
+extraction надёжный).
+
+## replies.PIPELINE_DONE — добавить счётчик "уже видели"
+
+В новой модели после step_9 есть данные чтобы показать юзеру:
+"X из 25 кандидатов уже видели по другим вакансиям".
+
+Технически: `bot/pipelines.py` уже считает `already_seen_count` через
+`db.is_candidate_known_to_user` (отдельно от per-vacancy дедупа), и
+возвращает в `result["already_seen"]`. Нужно:
+
+1. Добавить поле в `replies.PIPELINE_DONE` (формулировку обсудить).
+   Варианты:
+   - "X из 25 уже видели на других вакансиях"
+   - "X из 25 уже были в наших прошлых прогонах"
+   - "X из 25 — повторы из прошлых поисков"
+2. `bot/handlers.py:_run_pipeline_task` пробрасывает `result["already_seen"]`
+   в `replies.PIPELINE_DONE.format(...)`.
+
+Why: один из критериев готовности всего плана step_5.5 (PLAN.md). Удобно
+тронуть `replies.py` один раз вместе с командами `/vacancies`,
+`/replay_search` и т.п. на step_10–11.
+
+Откладывается на step_10 или step_11.
+
 ## from_apify_search.py — убрать sys.exit, добавить ApifyError
 
 `search_linkedin_profiles()` делает `sys.exit(1)` если нет

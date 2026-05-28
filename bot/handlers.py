@@ -139,22 +139,32 @@ async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ------------------------------------------------------------- input handling
 
 async def _generate_boolean_and_advance(
-    db: DB, session: dict, input_text: str, brief_text: str | None, say,
+    db: DB, session: dict, user_id: int,
+    input_text: str, brief_text: str | None, say,
 ):
     """Common path once JD/CV text is extracted.
 
-    Generates the boolean, persists input + boolean, advances the session to
-    WAITING_BOOLEAN_CONFIRM, and sends the boolean to the user via `say`.
-    `say` is an async callable so this works for both text and file flows.
+    1. Create a manual `vacancies` row with the JD + brief.
+    2. Generate the boolean via the LLM.
+    3. Store boolean in sessions.pending_boolean (held until the user confirms;
+       at that point it'll move into a fresh `searches` row).
+    4. Link the session to the vacancy and advance to WAITING_BOOLEAN_CONFIRM.
     """
+    session_id = session["id"]
+    vacancy_id = await db.create_vacancy(
+        source="manual",
+        name=f"vacancy_{session_id}",
+        jd_text=input_text,
+        brief_text=brief_text,
+        created_by_user_id=user_id,
+    )
     boolean = await pipelines.generate_boolean(
         input_text, brief_text, session["pipeline_type"]
     )
     await db.update_session(
-        session["id"],
-        input_text=input_text,
-        brief_text=brief_text,
-        boolean_text_original=boolean,
+        session_id,
+        vacancy_id=vacancy_id,
+        pending_boolean=boolean,
         step=SessionStep.WAITING_BOOLEAN_CONFIRM.value,
     )
     await say(
@@ -189,18 +199,28 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text(t, **kw)
 
         await _generate_boolean_and_advance(
-            db, session, input_text, brief_text, say
+            db, session, user_id, input_text, brief_text, say
         )
 
     elif step == SessionStep.WAITING_BOOLEAN_CONFIRM:
-        # Confirm word -> use the generated boolean; anything else -> an edit.
+        # Confirm -> use pending_boolean as-is; any other text -> the user's edit.
+        pending = session["pending_boolean"]
         if is_confirm_word(text):
-            boolean = session["boolean_text_original"]
+            boolean = pending
+            original = None
         else:
             boolean = text.strip()
+            original = pending if pending != boolean else None
+        search_id = await db.create_search(
+            vacancy_id=session["vacancy_id"],
+            boolean_text=boolean,
+            original_boolean=original,
+            created_by_user_id=user_id,
+        )
         await db.update_session(
             session["id"],
-            boolean_text=boolean,
+            search_id=search_id,
+            pending_boolean=None,
             step=SessionStep.RUNNING.value,
         )
         await _reply(update, replies.PIPELINE_STARTED)
@@ -312,7 +332,7 @@ async def _process_files(
         await say(f"{replies.EMPTY_INPUT} ({e})")
         return
 
-    await _generate_boolean_and_advance(db, session, input_text, brief_text, say)
+    await _generate_boolean_and_advance(db, session, user_id, input_text, brief_text, say)
 
 
 # ------------------------------------------------------------- background run

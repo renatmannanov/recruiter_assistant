@@ -17,38 +17,33 @@ from bot import pipelines
 from db.client import DB
 
 
-async def _seed_session_with_input(
+async def _seed_running_session(
     db: DB, user_id: int = 999, boolean: str = "(Python)",
 ) -> int:
-    """Create a confirmed session ready for the run step.
-
-    Re-enabled at step_9 to use the new model (vacancy + search rows). Until
-    then, the body of this helper writes to dropped columns and the tests
-    are skipped below.
-    """
+    """Create a session linked to a manual vacancy and a search, set to
+    'running' — the state pipelines.run_pipeline expects."""
     await db.upsert_user(user_id, "Test")
     sid = await db.create_session(user_id, "vacancy_to_candidates")
+    vid = await db.create_vacancy(
+        source="manual",
+        name=f"vacancy_{sid}",
+        jd_text="Senior Python role",
+        created_by_user_id=user_id,
+    )
+    search_id = await db.create_search(
+        vacancy_id=vid, boolean_text=boolean, created_by_user_id=user_id,
+    )
     await db.update_session(
-        sid,
-        input_text="Senior Python role",
-        boolean_text=boolean,
-        boolean_text_original=boolean,
-        step="running",
+        sid, vacancy_id=vid, search_id=search_id, step="running",
     )
     return sid
 
 
-@pytest.mark.skip(
-    reason="step_9 rewrites pipelines.run_pipeline against the new model "
-           "(vacancy/search/candidates/candidate_screenings). Until then "
-           "this test seeds sessions with dropped columns."
-)
 async def test_resumes_from_existing_raw_apify(db, tmp_path):
     """If raw_apify.json exists, discover_candidates must NOT be called."""
-    sid = await _seed_session_with_input(db)
+    sid = await _seed_running_session(db)
     run_id = await db.create_run(sid, 999, "vacancy_to_candidates")
 
-    # Plant a previous-run raw_apify.json on disk.
     sess_dir = tmp_path / "sessions" / str(sid)
     sess_dir.mkdir(parents=True)
     raw = [{
@@ -62,7 +57,9 @@ async def test_resumes_from_existing_raw_apify(db, tmp_path):
 
     with patch.object(
         pipelines, "discover_candidates",
-        side_effect=AssertionError("discover_candidates must not be called when raw exists"),
+        side_effect=AssertionError(
+            "discover_candidates must not be called when raw exists"
+        ),
     ), patch.object(pipelines, "screen_candidates") as fake_screen, \
          patch.object(pipelines, "_new_openai_client", return_value=object()):
         fake_screen.return_value = {
@@ -87,14 +84,9 @@ async def test_resumes_from_existing_raw_apify(db, tmp_path):
     assert result["cost_usd"] == 0.0
 
 
-@pytest.mark.skip(
-    reason="step_9 rewrites pipelines.run_pipeline against the new model "
-           "(vacancy/search/candidates/candidate_screenings). Until then "
-           "this test seeds sessions with dropped columns."
-)
 async def test_calls_discover_when_no_raw_apify(db, tmp_path):
     """Fresh session (no raw file) must call discover_candidates once."""
-    sid = await _seed_session_with_input(db)
+    sid = await _seed_running_session(db)
     run_id = await db.create_run(sid, 999, "vacancy_to_candidates")
 
     fake_profiles = [{

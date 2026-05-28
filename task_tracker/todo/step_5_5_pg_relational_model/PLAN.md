@@ -36,7 +36,7 @@ PG без изменений в логике, потом новая модель
 | 6  | step_6_phase1_e2e.md                              | 1    | [x]    |
 | 7  | step_7_relational_schema.md                       | 2    | [x]    |
 | 8  | step_8_client_crud_new_tables.md                  | 2    | [x]    |
-| 9  | step_9_pipelines_to_new_model.md                  | 2    | [ ]    |
+| 9  | step_9_pipelines_to_new_model.md                  | 2    | [x]    |
 | 10 | step_10_bot_commands_vacancies_runs.md            | 2    | [ ]    |
 | 11 | step_11_bot_commands_candidate_rescreen.md        | 2    | [ ]    |
 | 12 | step_12_phase2_e2e.md                             | 2    | [ ]    |

@@ -146,9 +146,21 @@ async def _run_vacancy_pipeline(
         raise RuntimeError(f"session {session_id} not found")
 
     user_id = session["user_id"]
-    boolean = session["boolean_text"]
+    vacancy_id = session["vacancy_id"]
+    search_id = session["search_id"]
+    if vacancy_id is None or search_id is None:
+        raise RuntimeError(
+            f"session {session_id} not linked to vacancy/search "
+            f"(vacancy_id={vacancy_id}, search_id={search_id})"
+        )
+
+    vacancy = await db.get_vacancy(vacancy_id)
+    search = await db.get_search(search_id)
+    if vacancy is None or search is None:
+        raise RuntimeError("vacancy or search row missing for this session")
+    boolean = search["boolean_text"]
     if not boolean:
-        raise RuntimeError("session has no confirmed boolean_text")
+        raise RuntimeError("search has empty boolean_text")
 
     sess_dir = _session_dir(data_dir, session_id)
     raw_path = sess_dir / "raw_apify.json"
@@ -184,8 +196,15 @@ async def _run_vacancy_pipeline(
         )
     await db.update_run(run_id, raw_apify_path=str(raw_path))
 
-    # 2) Dedup against this user's previously seen candidates (SQLite-only).
+    # 2) Two-axis dedup against the global candidates+screenings tables:
+    #    - screened_for_vacancy: this candidate was already evaluated for THIS
+    #      vacancy in some previous run — skip LLM, result wouldn't change.
+    #    - known_to_user:        this user has screened this candidate at any
+    #      point (for any vacancy) — counted for the "already seen N" line in
+    #      PIPELINE_DONE, but does NOT skip screening (other vacancy ⇒ other
+    #      requirements ⇒ different verdict).
     seen_before = 0
+    already_screened_for_vacancy = 0
     new_profiles: list[dict] = []
     for p in discover_result["profiles"]:
         url = get_profile_url(p)
@@ -193,13 +212,16 @@ async def _run_vacancy_pipeline(
             # No URL means we cannot dedup or store it. Skip — same as
             # discover.py CLI behaviour.
             continue
-        if await db.is_candidate_known(user_id, url):
-            seen_before += 1
+        if await db.is_candidate_screened_for_vacancy(url, vacancy_id):
+            already_screened_for_vacancy += 1
             continue
+        if await db.is_candidate_known_to_user(user_id, url):
+            seen_before += 1
         new_profiles.append(p)
     log.info(
-        "session %s: dedup — %d already seen, %d new to screen",
-        session_id, seen_before, len(new_profiles),
+        "session %s: dedup — %d skipped (same vacancy), %d already known to "
+        "user (still screen), %d to screen",
+        session_id, already_screened_for_vacancy, seen_before, len(new_profiles),
     )
 
     # 3) Screening. Empty list is fine — we still write a (very short) report
@@ -209,15 +231,20 @@ async def _run_vacancy_pipeline(
         screen_candidates,
         client=openai_client,
         profiles=new_profiles,
-        vacancy_text=session["input_text"] or "",
-        brief_text=session["brief_text"],
-        vacancy_name=f"session_{session_id}",
+        vacancy_text=vacancy["jd_text"] or "",
+        brief_text=vacancy["brief_text"],
+        vacancy_name=vacancy["name"] or f"vacancy_{vacancy_id}",
     )
 
-    # 4) Persist screened candidates (idempotent: dedup above guarantees no
-    # duplicates per user). Skip if nothing was screened.
+    # 4) Persist each screened candidate via the relational tables:
+    #    upsert into global `candidates` (one row per LinkedIn URL across all
+    #    users / vacancies), then a row in `candidate_screenings` linking
+    #    candidate × vacancy × run with the LLM verdict.
     if screening["db_rows"]:
-        await db.insert_candidates(run_id, user_id, screening["db_rows"])
+        await _persist_screenings(
+            db, vacancy_id=vacancy_id, run_id=run_id, user_id=user_id,
+            profiles=new_profiles, db_rows=screening["db_rows"],
+        )
 
     # 5) Write the report file + persist the markdown body for analytics.
     report_path = sess_dir / "report.md"
@@ -242,10 +269,35 @@ async def _run_vacancy_pipeline(
         "go": screening["go_count"],
         "maybe": screening["maybe_count"],
         "skip": screening["skip_count"],
+        "already_seen": seen_before,                    # known to user before
+        "skipped_same_vacancy": already_screened_for_vacancy,
         "report_path": str(report_path),
         "cost_usd": total_cost,
         "duration_sec": duration,
     }
+
+
+async def _persist_screenings(
+    db: DB, *, vacancy_id: int, run_id: int, user_id: int,
+    profiles: list[dict], db_rows: list[dict],
+):
+    """Upsert each candidate globally and link them to this run via
+    candidate_screenings.
+
+    `profiles` and `db_rows` are 1-to-1 in the order screen_candidates
+    produced them (raw Apify profile in, summarized DB row out). We need the
+    raw profile for upsert_candidate (it stores the full JSONB) and the
+    parsed verdict from db_rows for create_screening.
+    """
+    for profile, row in zip(profiles, db_rows, strict=True):
+        cand_id = await db.upsert_candidate(profile)
+        await db.create_screening(
+            candidate_id=cand_id, vacancy_id=vacancy_id, run_id=run_id,
+            user_id=user_id,
+            ai_status=row.get("ai_status"),
+            ai_score=row.get("ai_score"),
+            ai_comment=row.get("ai_comment"),
+        )
 
 
 def _compact_result(r: dict) -> dict:
