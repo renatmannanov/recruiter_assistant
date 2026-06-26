@@ -82,7 +82,11 @@ async def _start_session(
 
     active = await db.get_active_session(user_id)
     if active is not None:
-        await db.update_session(active["id"], step=SessionStep.CANCELLED.value)
+        await db.update_session(
+            active["id"],
+            step=SessionStep.CANCELLED.value,
+            pending_boolean=None,
+        )
 
     await db.create_session(user_id, pipeline_type)
     await _reply(update, ask_text)
@@ -109,7 +113,11 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active is None:
         await _reply(update, replies.NOTHING_TO_CANCEL)
         return
-    await db.update_session(active["id"], step=SessionStep.CANCELLED.value)
+    await db.update_session(
+        active["id"],
+        step=SessionStep.CANCELLED.value,
+        pending_boolean=None,
+    )
     await _reply(update, replies.SESSION_CANCELLED)
 
 
@@ -127,6 +135,82 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pipeline_type=active["pipeline_type"],
         step=active["step"],
     ))
+
+
+async def cmd_vacancies(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/vacancies — list the user's vacancies, newest first."""
+    db = _db(context)
+    if not await _ensure_user(db, update):
+        return
+    vacancies = await db.list_vacancies_by_user(update.effective_user.id)
+    if not vacancies:
+        await _reply(update, replies.VACANCIES_EMPTY)
+        return
+    lines = [replies.VACANCIES_LIST_HEADER]
+    for v in vacancies:
+        lines.append(replies.VACANCIES_LIST_ITEM.format(
+            id=v["id"], name=v["name"] or "(no name)",
+            source=v["source"], created_at=v["created_at"],
+        ))
+    await _reply(update, "\n".join(lines))
+
+
+async def cmd_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/vacancy <id> — one vacancy's card: JD, searches, runs, screening stats.
+
+    Access control: a vacancy owned by another user reads as "not found"
+    (same-as-404), so the command never leaks the existence of others' data.
+    """
+    db = _db(context)
+    if not await _ensure_user(db, update):
+        return
+    parts = (update.effective_message.text or "").split(maxsplit=1)
+    arg = parts[1].strip().lstrip("#") if len(parts) > 1 else ""
+    if not arg.isdigit():
+        await _reply(update, replies.VACANCY_USAGE)
+        return
+    vid = int(arg)
+
+    v = await db.get_vacancy(vid)
+    if v is None or v["created_by_user_id"] != update.effective_user.id:
+        await _reply(update, replies.VACANCY_NOT_FOUND.format(id=vid))
+        return
+
+    searches = await db.list_searches_by_vacancy(vid)
+    screenings = await db.list_screenings_by_vacancy(vid)
+    go = sum(1 for s in screenings if s["ai_status"] == "pass")
+    maybe = sum(1 for s in screenings if s["ai_status"] == "uncertain")
+    skip = sum(1 for s in screenings if s["ai_status"] == "fail")
+    runs_count = len({s["run_id"] for s in screenings})
+    jd = v["jd_text"] or ""
+    jd_preview = jd[:300] + ("..." if len(jd) > 300 else "")
+
+    await _reply(update, replies.VACANCY_CARD.format(
+        id=v["id"], name=v["name"] or "(no name)", source=v["source"],
+        created_at=v["created_at"], searches_count=len(searches),
+        runs_count=runs_count, screenings_count=len(screenings),
+        go=go, maybe=maybe, skip=skip, jd_preview=jd_preview,
+    ))
+
+
+async def cmd_runs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/runs — the user's most recent runs (newest first)."""
+    db = _db(context)
+    if not await _ensure_user(db, update):
+        return
+    rows = await db.list_recent_runs_by_user(update.effective_user.id)
+    if not rows:
+        await _reply(update, replies.RUNS_EMPTY)
+        return
+    lines = [replies.RUNS_LIST_HEADER]
+    for r in rows:
+        lines.append(replies.RUNS_LIST_ITEM.format(
+            id=r["id"], session_id=r["session_id"],
+            pipeline_type=r["pipeline_type"], status=r["status"],
+            found=r["found_count"] or 0, passed=r["passed_count"] or 0,
+            created_at=r["created_at"],
+        ))
+    await _reply(update, "\n".join(lines))
 
 
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -380,6 +464,7 @@ async def _run_pipeline_task(
                 go=result.get("go", 0),
                 maybe=result.get("maybe", 0),
                 skip=result.get("skip", 0),
+                already_seen=result.get("already_seen", 0),
             ),
         )
         with open(result["report_path"], "rb") as fh:

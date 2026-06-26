@@ -37,10 +37,19 @@ PG без изменений в логике, потом новая модель
 | 7  | step_7_relational_schema.md                       | 2    | [x]    |
 | 8  | step_8_client_crud_new_tables.md                  | 2    | [x]    |
 | 9  | step_9_pipelines_to_new_model.md                  | 2    | [x]    |
-| 10 | step_10_bot_commands_vacancies_runs.md            | 2    | [ ]    |
+| 10 | step_10_bot_commands_vacancies_runs.md            | 2    | [x]    |
 | 11 | step_11_bot_commands_candidate_rescreen.md        | 2    | [ ]    |
+| 11.5 | step_11_5_locations_in_apify.md                 | 2    | [ ]    |
 | 12 | step_12_phase2_e2e.md                             | 2    | [ ]    |
 | 13 | step_13_completion.md                             | 2    | [ ]    |
+
+> **Решение 2026-06-26 (новое окно):** `/replay_search` вынесена в
+> `task_tracker/backlog/step_5_backlog.md` — сначала закрываем базовые
+> read-only команды и locations-фикс, гоняем e2e, реплеи улучшаем потом.
+> step_10 = 3 команды (`/vacancies`, `/vacancy <id>`, `/runs`).
+> Добавлен step_11.5: locations из JD в Apify-запрос (баг качества выдачи,
+> подтверждён на step_6/12 e2e). Resume-from-disk ключ остаётся в бэклоге —
+> перед e2e чистим `data/sessions/*` руками.
 
 ## Критерии готовности всего плана
 
@@ -52,8 +61,9 @@ PG без изменений в логике, потом новая модель
 - [ ] Команда `/vacancies` отдаёт список вакансий пользователя
 - [ ] Команда `/candidate <linkedin_url>` показывает историю скринингов человека по разным вакансиям
 - [ ] Команда `/rescreen <run_id> <new_vacancy_id>` гонит существующих кандидатов на новой вакансии без Apify
-- [ ] Команда `/replay_search <search_id>` запускает Apify-прогон с тем же boolean'ом
+- [~] Команда `/replay_search <search_id>` — **вынесена в backlog** (2026-06-26)
 - [ ] `replies.PIPELINE_DONE` показывает "X из 25 кандидатов уже видели по другим вакансиям"
+- [ ] Locations из JD прокидываются в Apify-запрос (step_11.5)
 - [ ] SQLite-зависимости полностью удалены (нет import sqlite3 в коде)
 - [ ] `db/migrations/` содержит обе миграции (001_initial_pg, 002_relational_model)
 - [ ] Memory нового репо обновлена (новая схема, PG-инфра)

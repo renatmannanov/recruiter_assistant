@@ -283,6 +283,18 @@ class DB:
     async def fail_run(self, run_id: int, error_text: str):
         await self.update_run(run_id, status="failed", error_text=error_text)
 
+    async def list_recent_runs_by_user(
+        self, user_id: int, limit: int = 10
+    ) -> list[dict]:
+        """The user's most recent runs (newest first), for the /runs command."""
+        return await self._query_all(
+            "SELECT id, session_id, pipeline_type, status, "
+            "found_count, passed_count, created_at "
+            "FROM runs WHERE user_id = $1 "
+            "ORDER BY created_at DESC, id DESC LIMIT $2",
+            user_id, limit,
+        )
+
     # ------------------------------------------------------------------ companies
 
     async def get_or_create_company(self, name: str) -> int:

@@ -177,6 +177,34 @@ Why: текущая модель "запускаю → тишина → резу
 chat). Скрининг 25 кандидатов = до 25 эдитов — нужно троттлить
 (обновлять каждые ~3 секунды или каждый N-й кандидат).
 
+## /replay_search <search_id> — повтор поиска без диалога
+
+Команда: взять существующий `search.boolean_text`, создать новую `session` +
+`run` под **ту же** `vacancy_id`, запустить pipeline — пропуская
+`pending_boolean` + confirm. `_run_vacancy_pipeline` уже читает
+`vacancy_id`/`search_id` из session, так что команда — тонкая обёртка
+(get_search → access-check `vacancy.created_by_user_id == user_id` → новая
+session с тем же vacancy_id+search_id+step=RUNNING → `_kick_off_pipeline`).
+
+Польза: Apify со временем индексирует новых людей; повторить тот же запрос =
+найти новых, дедуп (`is_candidate_screened_for_vacancy`) скипнет уже
+скринённых.
+
+**Отложено осознанно (2026-06-26).** Сначала закрываем базовые read-only
+команды (step_10) + locations-фикс, гоняем e2e, потом улучшаем реплеями.
+
+**Развилка, которую надо решить при реализации — resume-from-disk vs Apify:**
+`/replay_search` создаёт session с НОВЫМ id → новой папки
+`data/sessions/<new_id>/` нет → pipeline пойдёт в Apify **заново и заплатит**.
+Два режима, тянут в разные стороны:
+- **«найти новых» (рабочая фича):** свежий Apify-прогон — это правильно.
+- **«бесплатный дедуп-тест» (step_12):** надо переиспользовать
+  `raw_apify.json` исходной session (скопировать файл / передать data_dir),
+  тогда Apify $0, дедуп скипнет LLM, итог $0.
+Связано с багом «resume-from-disk ключ» ниже — если ключ resume сменить на
+хэш boolean, бесплатный режим заработает естественно (тот же boolean →
+resume из любой папки с тем же запросом).
+
 ## CLI discover.py — отделить от Notion
 
 Сейчас `cli/discover.py` обязательно требует `--config` + `--vacancy` +

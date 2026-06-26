@@ -130,6 +130,21 @@ async def test_cancel_active_session(db, whitelisted):
     assert await db.get_active_session(whitelisted) is None
 
 
+async def test_cancel_clears_pending_boolean(db, whitelisted):
+    """/cancel on a session awaiting boolean confirmation must null out
+    pending_boolean — otherwise cancelled rows keep draft booleans (backlog)."""
+    await db.upsert_user(whitelisted, "Renat")
+    sid = await db.create_session(whitelisted, "vacancy_to_candidates")
+    await db.update_session(
+        sid, step=SessionStep.WAITING_BOOLEAN_CONFIRM.value,
+        pending_boolean="(Python)",
+    )
+    await handlers.cmd_cancel(FakeUpdate(uid=whitelisted), FakeContext(db))
+    session = await db.get_session(sid)
+    assert session["step"] == SessionStep.CANCELLED.value
+    assert session["pending_boolean"] is None
+
+
 async def test_refind_cancels_previous_session(db, whitelisted):
     await db.upsert_user(whitelisted, "Renat")
     old = await db.create_session(whitelisted, "vacancy_to_candidates")

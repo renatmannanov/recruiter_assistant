@@ -8,6 +8,9 @@ WELCOME = (
     "Привет! Я recruiter assistant. Команды:\n"
     "/refind_vacancy — найти кандидатов под вакансию\n"
     "/refind_candidate — найти вакансии под CV\n"
+    "/vacancies — список твоих вакансий\n"
+    "/vacancy <id> — карточка вакансии (searches, runs, статистика)\n"
+    "/runs — последние прогоны\n"
     "/status — что сейчас в работе\n"
     "/cancel — отменить текущую сессию"
 )
@@ -42,7 +45,8 @@ PIPELINE_DONE = (
     "Прошли скрининг: {screened}\n"
     "GO: {go}\n"
     "MAYBE: {maybe}\n"
-    "SKIP: {skip}\n\n"
+    "SKIP: {skip}\n"
+    "Уже видели на других вакансиях: {already_seen}\n\n"
     "Подробный отчёт в файле ниже."
 )
 
@@ -78,6 +82,33 @@ NOTHING_TO_CANCEL = "Нечего отменять — активной сесс
 STATUS_NO_SESSION = "Активной сессии нет. /refind_vacancy или /refind_candidate."
 STATUS_ACTIVE = (
     "Сессия #{session_id} ({pipeline_type})\nЭтап: {step}"
+)
+
+# /vacancies, /vacancy, /runs — listing commands (read-only).
+VACANCIES_EMPTY = "У тебя пока нет вакансий. Начни через /refind_vacancy."
+VACANCIES_LIST_HEADER = "Твои вакансии:"
+VACANCIES_LIST_ITEM = "#{id} {name} ({source}) — {created_at}"
+
+VACANCY_USAGE = "Использование: /vacancy <id>"
+VACANCY_NOT_FOUND = "Вакансия #{id} не найдена."
+VACANCY_CARD = (
+    "Вакансия #{id}: {name}\n"
+    "Источник: {source}\n"
+    "Создана: {created_at}\n\n"
+    "Searches (boolean'ы): {searches_count}\n"
+    "Runs: {runs_count}\n"
+    "Скринингов: {screenings_count}\n"
+    "  GO: {go}\n"
+    "  MAYBE: {maybe}\n"
+    "  SKIP: {skip}\n\n"
+    "JD:\n{jd_preview}"
+)
+
+RUNS_EMPTY = "У тебя пока нет прогонов."
+RUNS_LIST_HEADER = "Последние прогоны:"
+RUNS_LIST_ITEM = (
+    "#{id} session #{session_id} ({pipeline_type}) — "
+    "{status}, found {found}, passed {passed} — {created_at}"
 )
 
 # extractors.py errors.

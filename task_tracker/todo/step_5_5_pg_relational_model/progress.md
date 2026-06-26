@@ -471,3 +471,41 @@ e2e через Telegram подтверждён. Следующее — фаза 
 **Backlog добавлен (в `task_tracker/backlog/step_5_backlog.md`):**
 - resume-from-disk путается на старых `data/sessions/N/raw_apify.json`
 - `sessions.pending_boolean` не очищается при `/cancel`
+
+### step_10 (2026-06-26, новое окно)
+
+**Решения, принятые с Ренатом перед стартом:**
+- `/replay_search` **вынесена в backlog** — сначала закрываем базовые
+  read-only команды + locations-фикс, гоняем e2e, реплеи потом. step_10 =
+  ровно 3 команды.
+- Добавлен **step_11.5** (locations из JD в Apify-запрос) — баг качества
+  выдачи, подтверждён на step_6/12.
+- Resume-from-disk ключ остаётся в backlog. Перед e2e чистим
+  `data/sessions/*` руками (locations-фикс требует свежего Apify).
+- already_seen формулировка: «Уже видели на других вакансиях: X».
+
+**Сделано:**
+- `db.list_recent_runs_by_user(user_id, limit=10)` — новый метод (вместо
+  `db._query_all` в хендлере, как предлагал устаревший step_10.md).
+  Остальные методы (`list_vacancies_by_user`, `list_searches_by_vacancy`,
+  `list_screenings_by_vacancy`, `get_vacancy`) уже были из step_8.
+- `bot/handlers.py`: `cmd_vacancies`, `cmd_vacancy`, `cmd_runs`.
+  Access-control: чужая вакансия → `VACANCY_NOT_FOUND` (same-as-404),
+  `/runs` фильтрует по `user_id` в SQL.
+- **Fix pending_boolean при cancel** (backlog): `cmd_cancel` и
+  `_start_session` (cancel предыдущей) теперь шлют `pending_boolean=None`.
+- **already_seen в PIPELINE_DONE**: хендлер пробрасывает
+  `result["already_seen"]`, шаблон показывает строку всегда (0 если нет
+  повторов). Поле уже считалось в pipelines.py с step_9.
+- `bot/main.py`: 3 CommandHandler'а зарегистрированы.
+- WELCOME обновлён (vacancies/vacancy/runs).
+
+**Тесты:**
+- Новый `tests/test_handlers_listing.py` — 11 тестов (empty/list/card/
+  not-found/usage/access-denied/own-only/limit-10). Переиспользуют
+  Telegram-моки из test_handlers.py, второй whitelisted-юзер (999000)
+  для проверки изоляции.
+- `tests/test_handlers.py`: +1 тест `test_cancel_clears_pending_boolean`.
+- **Итог: 117 passed, 0 skipped** (было 107).
+- Smoke-старт бота чистый (БД подключилась, polling пошёл).
+- **Коммит**: `feat(bot): step 5.5.10 — listing commands`.

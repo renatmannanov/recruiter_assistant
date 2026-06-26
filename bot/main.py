@@ -77,6 +77,9 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("refind_candidate", handlers.cmd_refind_candidate))
     app.add_handler(CommandHandler("cancel", handlers.cmd_cancel))
     app.add_handler(CommandHandler("status", handlers.cmd_status))
+    app.add_handler(CommandHandler("vacancies", handlers.cmd_vacancies))
+    app.add_handler(CommandHandler("vacancy", handlers.cmd_vacancy))
+    app.add_handler(CommandHandler("runs", handlers.cmd_runs))
     # Any other /command.
     app.add_handler(MessageHandler(filters.COMMAND, handlers.cmd_unknown))
     # Documents and plain text.
