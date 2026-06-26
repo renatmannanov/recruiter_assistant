@@ -83,6 +83,53 @@ Why: один из критериев готовности всего плана
 
 Откладывается на step_10 или step_11.
 
+## resume-from-disk путается на старых data/sessions/N/raw_apify.json
+
+`bot/pipelines.py:_run_vacancy_pipeline` использует `session_id` как ключ
+для resume: если `data/sessions/<session_id>/raw_apify.json` существует —
+пайплайн пропускает Apify и берёт оттуда профили.
+
+Проблема: `session_id` в PG растёт от 1 (после step_7 TRUNCATE). Папки
+`data/sessions/N/` от прошлых жизней проекта (SQLite-эпоха, до step_5.5)
+остались на диске. Если новая PG-сессия получает id, который совпадает
+со старой папкой — пайплайн скринит **не тех** кандидатов.
+
+**Поймали на step_12 e2e (2026-06-26):** session id=4 в PG нашла
+`data/sessions/4/raw_apify.json` от 2026-05-20 → раунд 2 теста скринил
+старых 25 кандидатов вместо новых. Resume сработал тихо, без
+warning'а в логе (только INFO: "discover resumed from disk").
+
+Варианты починки:
+1. **Привязать ключ к чему-то стабильному**: хэш `boolean_text` + дата
+   prefix, или `vacancy_id` + `search_id`. Тогда коллизий с прошлой
+   эпохой не будет.
+2. **При старте бота проверить data/sessions/ против PG**: удалить
+   папки без соответствующей строки в `sessions`.
+3. **Резкое**: `rm -rf data/sessions/*` сейчас, дальше с чистого
+   листа. Потеряем raw_apify.json от полезных прошлых прогонов
+   (session 28 step_6, session 2 step_12 round 1).
+
+Рекомендую (1) — изменить ключ resume на хэш boolean. Это правильнее
+семантически: resume должен срабатывать когда мы повторяем **тот же
+запрос**, а не «случайно тот же session_id».
+
+## sessions.pending_boolean не очищается при /cancel
+
+Если юзер пишет `/refind_vacancy` → присылает JD → получает boolean →
+**не подтверждает**, а делает `/cancel` (или новый `/refind_vacancy`,
+который cancel'ит предыдущую сессию) — в БД остаётся `sessions.step =
+cancelled` **с непустым `pending_boolean`**. Мусор не вредит, но
+смущает в `/vacancies` если будем показывать связанные сессии.
+
+**Поймали на step_12 e2e (2026-06-26):** session id=3 в БД имеет
+`pending_boolean IS NOT NULL` и `step='cancelled'`.
+
+Фикс: в `bot/handlers.py:cmd_cancel` и в `_start_session` (когда
+cancel'им предыдущую) — `update_session(sid, step='cancelled',
+pending_boolean=None)`.
+
+Тривиально (2 строки), отложено только потому что не блокер.
+
 ## from_apify_search.py — убрать sys.exit, добавить ApifyError
 
 `search_linkedin_profiles()` делает `sys.exit(1)` если нет

@@ -404,3 +404,70 @@ e2e через Telegram подтверждён. Следующее — фаза 
   подключается, polling запускается, `getUpdates` уходит к Telegram.
   Реальный TG e2e — на step_12.
 - **Коммит**: `feat(bot): step 5.5.9 — pipelines/handlers on new relational model`.
+
+### step_12 e2e — частично (2026-06-26)
+
+**Скип step_10 и step_11 — пошли сразу в e2e на новой модели**, чтобы
+убедиться что pipeline после большой переписи step_9 не сломан до
+того, как добавлять команды поверх. Дедуп полноценно тестируется
+только когда есть `/replay_search` (step_10), поэтому e2e на этом
+шаге — частичный.
+
+**Грабли пойманные:**
+
+- **PG на Mac mini слетел `listen_addresses`.** Конфиг
+  `postgresql.conf` корректный (`localhost,100.104.30.62`), но
+  процесс был стартован раньше — слушал только localhost. `psql -c
+  'SHOW listen_addresses'` показывал правильное значение, но `lsof
+  -i :5432` — только `::1` / `127.0.0.1`. Step_1 предупреждал: эта
+  настройка требует **restart**, не reload. Восстановили через
+  `launchctl kickstart -k gui/$(id -u)/com.rm_mini.postgres` (см.
+  step_1 — корректный путь без `LC_ALL`-гвоздя). `rm_mini`
+  переподключился сам.
+- **JobQueue extra отсутствовал**: `python-telegram-bot>=21.0` без
+  `[job-queue]` → `context.job_queue is None` → `AttributeError` в
+  `on_document` при media-group дебаунсе. Юзер прислал 2 файла
+  (vacancy+brief одним свайпом) → бот молчал, в логе traceback.
+  Установили `python-telegram-bot[job-queue]>=21.0`, обновили
+  `requirements.txt`. Был **давний** баг: в step_5/6 e2e юзер
+  посылал JD текстом, on_document не дёргался.
+
+**Что прошло:**
+
+- Round 1 (vacancy_2, with brief): 25/25 candidates, 1 pass + 4
+  uncertain + 20 fail, $1.04, 6:04. Все связи FK на месте.
+- Round 2 (vacancy_4, with brief, другой boolean): 25/25, 1 pass +
+  24 fail, $0.61, 3:13. **Resume сработал из stale
+  `data/sessions/4/raw_apify.json`** от 2026-05-20 — скринили
+  старых кандидатов, не новых. См. backlog "resume-from-disk
+  путается". Это **не баг pipeline**, а грабля артефактов.
+
+**Что подтверждено:**
+- Бот работает end-to-end на новой модели (vacancy → search →
+  run → candidates → screenings).
+- Vacancy/Search/Run/Candidates/Screenings создаются и связаны FK.
+- Brief (второй файл) корректно сохраняется в `vacancies.brief_text`.
+- Cancelled-сессии не блокируют новые (тестировал переход cancel
+  → новый /refind_vacancy).
+- Resume-from-disk работает (хоть и подсунул старые данные).
+- `vacancies.linkedin_url` partial UNIQUE не сработал (все
+  вакансии `source='manual'`, linkedin_url IS NULL — норм).
+- `_COLUMNS["sessions"]` guard работает — все update_session с
+  vacancy_id/search_id/pending_boolean прошли без ошибок.
+
+**Что НЕ подтверждено (нужен step_10/11):**
+- Реальный дедуп между вакансиями: 50 unique candidates, 0
+  пересечений — Apify в раундах принёс разных людей.
+- `already_seen` счётчик в PIPELINE_DONE (собираем но не
+  показываем).
+- `/replay_search`, `/rescreen`, `/candidate` — этих команд нет.
+
+**Решение:** step_12 объявлен пройденным в части "pipeline жив".
+Полный дедуп-тест — после step_10 (`/replay_search` сделает
+бесплатный повтор с теми же данными). Идём в step_10.
+
+**Cost:** $1.65 на два прогона.
+
+**Backlog добавлен (в `task_tracker/backlog/step_5_backlog.md`):**
+- resume-from-disk путается на старых `data/sessions/N/raw_apify.json`
+- `sessions.pending_boolean` не очищается при `/cancel`
