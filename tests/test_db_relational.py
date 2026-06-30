@@ -183,6 +183,54 @@ async def test_create_search_links_to_vacancy(db):
     assert searches[0]["original_boolean"] is None
 
 
+async def test_create_search_stores_apify_params(db):
+    # step_11.5: apify_params (locations + experience) round-trips through JSONB.
+    await db.upsert_user(111)
+    vid = await db.create_vacancy(
+        source="manual", name="v", jd_text="JD", created_by_user_id=111,
+    )
+    params = {"locations": ["Germany", "Austria"], "experience": ["6-10", "10+"]}
+    sid = await db.create_search(
+        vacancy_id=vid, boolean_text="(Python)",
+        created_by_user_id=111, apify_params=params,
+    )
+    search = await db.get_search(sid)
+    stored = search["apify_params"]
+    if isinstance(stored, str):  # asyncpg returns JSONB as str unless decoded
+        stored = json.loads(stored)
+    assert stored == params
+
+
+async def test_create_search_apify_params_defaults_null(db):
+    # No apify_params -> NULL (old searches behave as "no location filter").
+    await db.upsert_user(111)
+    vid = await db.create_vacancy(
+        source="manual", name="v", jd_text="JD", created_by_user_id=111,
+    )
+    sid = await db.create_search(
+        vacancy_id=vid, boolean_text="(Python)", created_by_user_id=111,
+    )
+    search = await db.get_search(sid)
+    assert search["apify_params"] is None
+
+
+async def test_update_session_pending_apify_params_roundtrips(db):
+    # The transient draft column on sessions (mirrors pending_boolean).
+    await db.upsert_user(111)
+    sess_id = await db.create_session(111, "vacancy_to_candidates")
+    params = {"locations": ["Germany"], "experience": []}
+    await db.update_session(sess_id, pending_apify_params=json.dumps(params))
+    sess = await db.get_session(sess_id)
+    stored = sess["pending_apify_params"]
+    if isinstance(stored, str):
+        stored = json.loads(stored)
+    assert stored == params
+    # Clearing it on confirm sets NULL.
+    await db.update_session(sess_id, pending_apify_params=None)
+    sess = await db.get_session(sess_id)
+    assert sess["pending_apify_params"] is None
+
+
 # ---------------------------------------------------- candidate_screenings
 
 async def test_create_screening_basic(db):

@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   vacancy_id      BIGINT REFERENCES vacancies(id),
   search_id       BIGINT,                -- FK added after searches is defined (see ALTER below)
   pending_boolean TEXT,                  -- LLM-generated boolean held between WAITING_INPUT and WAITING_BOOLEAN_CONFIRM; cleared after the user confirms (migration 003)
+  pending_apify_params JSONB,            -- LLM-parsed {locations, experience} held alongside pending_boolean; moved into searches.apify_params on confirm (migration 004)
   report_path     TEXT,                  -- path to the .md report on disk (data/sessions/<id>/report.md)
   error_text      TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS searches (
   vacancy_id         BIGINT NOT NULL REFERENCES vacancies(id),
   boolean_text       TEXT NOT NULL,
   original_boolean   TEXT,
+  apify_params       JSONB,                 -- {locations:[...], experience:[...]} parsed from the LLM; only locations forwarded to Apify in v1 (migration 004)
   created_by_user_id BIGINT NOT NULL REFERENCES users(telegram_user_id),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );

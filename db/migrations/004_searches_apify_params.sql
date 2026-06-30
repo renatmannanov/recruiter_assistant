@@ -1,0 +1,31 @@
+-- 004_searches_apify_params.sql
+--
+-- step_11.5: carry the Apify search params (locations, experience) parsed out
+-- of the boolean_generator LLM output all the way into the Apify request.
+--
+-- Two columns, mirroring how `boolean` already flows (migration 003):
+--
+--   sessions.pending_apify_params  — transient draft, set when the boolean is
+--     generated (WAITING_INPUT -> WAITING_BOOLEAN_CONFIRM), cleared once the
+--     user confirms. Lives alongside sessions.pending_boolean and for the same
+--     reason: the bot may restart between "generated" and "confirmed", and the
+--     LLM markdown they were parsed from is already gone (re-parsing would mean
+--     a second paid LLM call).
+--
+--   searches.apify_params          — committed params for a query that actually
+--     went to Apify. Populated on confirm from sessions.pending_apify_params,
+--     same lifecycle as searches.boolean_text.
+--
+-- Why JSONB and not TEXT[]: we store both locations and experience as
+--   {"locations": [...], "experience": [...]}. For v1 only locations is
+--   forwarded to discover_candidates(); experience is kept for a later step.
+--
+-- Why not on `searches` from the start (pre-confirm): same invariant as
+-- pending_boolean — `searches` represents a committed query. Pre-confirm drafts
+-- shouldn't pollute it (especially on /cancel).
+--
+-- Existing searches rows get apify_params = NULL; the pipeline treats NULL as
+-- "no location filter" (= current behaviour). No backfill.
+
+ALTER TABLE sessions ADD COLUMN pending_apify_params JSONB;
+ALTER TABLE searches ADD COLUMN apify_params JSONB;

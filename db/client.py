@@ -26,6 +26,10 @@ _DB_DIR = Path(__file__).resolve().parent
 _SCHEMA_PATH = _DB_DIR / "schema.sql"
 _MIGRATIONS_DIR = _DB_DIR / "migrations"
 
+# sessions columns that are JSONB — update_session must cast their bind param
+# with ::jsonb (callers pass a json.dumps string, asyncpg won't coerce it).
+_JSONB_SESSION_COLUMNS = {"pending_apify_params"}
+
 
 def _build_dsn() -> str:
     """Return DATABASE_URL if set, else assemble one from PG_* env vars."""
@@ -197,8 +201,14 @@ class DB:
         if not fields:
             return
         self._guard_columns("sessions", fields)
-        # $1..$N for values, $(N+1) for session_id
-        cols = ", ".join(f"{k} = ${i+1}" for i, k in enumerate(fields))
+        # $1..$N for values, $(N+1) for session_id. JSONB columns need an
+        # explicit ::jsonb cast — asyncpg won't coerce a JSON string into jsonb
+        # on its own (callers pass json.dumps(...) for these).
+        cols = ", ".join(
+            f"{k} = ${i+1}::jsonb" if k in _JSONB_SESSION_COLUMNS
+            else f"{k} = ${i+1}"
+            for i, k in enumerate(fields)
+        )
         params = list(fields.values()) + [session_id]
         await self._execute(
             f"UPDATE sessions SET {cols}, updated_at = now() "
@@ -416,13 +426,22 @@ class DB:
         boolean_text: str,
         created_by_user_id: int,
         original_boolean: str | None = None,
+        apify_params: dict | None = None,
     ) -> int:
+        # asyncpg doesn't serialize a dict into jsonb automatically — dump it
+        # ourselves and cast with $5::jsonb (same pattern as upsert_candidate).
+        params_json = (
+            json.dumps(apify_params, ensure_ascii=False)
+            if apify_params is not None else None
+        )
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "INSERT INTO searches("
-                "vacancy_id, boolean_text, original_boolean, created_by_user_id) "
-                "VALUES ($1, $2, $3, $4) RETURNING id",
-                vacancy_id, boolean_text, original_boolean, created_by_user_id,
+                "vacancy_id, boolean_text, original_boolean, apify_params, "
+                "created_by_user_id) "
+                "VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING id",
+                vacancy_id, boolean_text, original_boolean, params_json,
+                created_by_user_id,
             )
         return row["id"]
 
@@ -537,7 +556,8 @@ class DB:
     _COLUMNS = {
         "sessions": {
             "user_id", "pipeline_type", "step", "vacancy_id", "search_id",
-            "pending_boolean", "report_path", "error_text",
+            "pending_boolean", "pending_apify_params", "report_path",
+            "error_text",
         },
         "runs": {
             "session_id", "user_id", "pipeline_type", "status",
