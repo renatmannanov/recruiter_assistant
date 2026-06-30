@@ -84,6 +84,72 @@ def extract_boolean(llm_output: str) -> str:
     return llm_output.strip()
 
 
+# Allowed experience buckets (must match prompts_candidates.py constraints and
+# from_apify_search.EXPERIENCE_MAP keys). Anything else the LLM emits ("5+",
+# "senior", "mid") is dropped rather than passed to Apify where it would fail.
+_ALLOWED_EXPERIENCE = {"<1", "1-2", "3-5", "6-10", "10+"}
+
+
+def extract_apify_params(llm_output: str) -> dict:
+    """Parse the '## Apify params' block into cleaned lists.
+
+    The LLM emits a section like::
+
+        ## Apify params
+        - locations: Germany, Luxembourg, Netherlands
+        - experience: 6-10, 10+
+        - exclude-titles: recruiter, HR
+        - titles: (none — reasoning)
+
+    Returns ``{"locations": [...], "experience": [...]}`` with both lists
+    cleaned. For v1 the bot only forwards ``locations`` to Apify; ``experience``
+    is parsed and stored for a future step.
+
+    Cleaning rules (deliberately conservative — see step_11.5):
+    - locations: split on comma, strip, drop empties. NOT validated against a
+      country dictionary — Apify silently ignores unrecognized names, and a
+      region grouping like "DACH" simply returns nothing rather than erroring.
+    - experience: same split, but keep only values in the allowed bucket set;
+      garbage ("5+", "senior") is dropped.
+
+    Missing section / empty values / malformed output → empty lists. Never
+    raises: a parse failure must not break boolean generation, it just degrades
+    to "no location filter" (the current behaviour).
+    """
+    empty = {"locations": [], "experience": []}
+
+    block_match = re.search(
+        r"##\s*Apify\s*params[^\n]*\n(.*?)(?:\n##\s|\Z)",
+        llm_output,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not block_match:
+        return empty
+    block = block_match.group(1)
+
+    def _values(field: str, allowed: set[str] | None = None) -> list[str]:
+        # Match a "- <field>: a, b, c" line within the block.
+        # [^\S\n] = horizontal whitespace only — so an empty "- field: " line
+        # doesn't let \s* swallow the newline and match the NEXT line's value.
+        line = re.search(
+            rf"-[^\S\n]*{re.escape(field)}[^\S\n]*:[^\S\n]*([^\n]*)",
+            block,
+            re.IGNORECASE,
+        )
+        if not line:
+            return []
+        raw = [v.strip() for v in line.group(1).split(",")]
+        vals = [v for v in raw if v]
+        if allowed is not None:
+            vals = [v for v in vals if v in allowed]
+        return vals
+
+    return {
+        "locations": _values("locations"),
+        "experience": _values("experience", _ALLOWED_EXPERIENCE),
+    }
+
+
 def generate_boolean_search(
     *,
     target: str,
