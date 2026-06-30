@@ -1,4 +1,80 @@
-# Шаг 11: Команды бота /candidate, /rescreen, /replay_search
+# Backlog: команды /candidate + /rescreen (бывший step_11)
+
+> Перенесено из todo в backlog 2026-06-26 по решению Рената: «сначала
+> закрыть базовые кейсы, погонять, потом вернуться».
+> Зависит от: step_10 (сделан).
+> Статус: deferred.
+
+---
+
+## РЕШЕНИЯ И ТЕХ-НАХОДКИ (читать перед реализацией)
+
+Обсуждено с Ренатом 2026-06-26. Тело файла ниже — исходный набросок step_11,
+но он **местами устарел**. Актуально следующее:
+
+**Скоуп: 2 команды** — `/candidate <url>` и `/rescreen <run_id> <new_vacancy_id>`.
+- `/replay_search` **вынесена в отдельный пункт `step_5_backlog.md`** — её
+  тут НЕ делаем. Игнорировать `cmd_replay_search` / `REPLAY_SEARCH_*` ниже.
+
+**`/candidate` — только по linkedin_url (НЕ по id).**
+- Решено: `id` брать неоткуда — `/vacancy <id>` показывает только статистику
+  (GO/MAYBE/SKIP), не список людей с id. Поэтому формат key = только url,
+  копируется из report.md после прогона.
+- Если позже захотим id — сначала расширить `/vacancy` списком кандидатов
+  (id + имя + вердикт), тогда id станет доступен. Это отдельная развилка.
+- Access: `is_candidate_known_to_user(user_id, url)` → иначе «не найден».
+- Историю скринингов фильтровать по `s["user_id"] == user_id` (не палить
+  чужие прогоны того же человека).
+
+**`/rescreen` — С confirm-шагом через state-машину (решено).**
+- Реализация: **новый шаг `SessionStep.WAITING_RESCREEN_CONFIRM`** (не две
+  команды, не in-memory). Чистый UX как у boolean confirm.
+- Требует **миграцию 004**: расширить CHECK на `sessions.step` значением
+  `waiting_rescreen_confirm` + 2 nullable колонки `pending_run_id`,
+  `pending_vacancy_id` (BIGINT). Обновить `db/schema.sql` (конвенция step_8:
+  schema.sql = снимок актуального состояния). Добавить эти колонки в
+  `_COLUMNS["sessions"]` в `db/client.py`.
+- `state_machine.py`: новый шаг + событие `RESCREEN_CONFIRMED` + переход
+  в `_TRANSITIONS` (WAITING_RESCREEN_CONFIRM → RUNNING на confirm,
+  → CANCELLED на cancel).
+- `cmd_rescreen`: парс 2 чисел → access (`run.user_id == user`,
+  `vacancy.created_by_user_id == user`) → `list_screenings_by_run` (если
+  пусто — отказ) → cancel активной (как `_start_session`, с
+  `pending_boolean=None`) → создать session в WAITING_RESCREEN_CONFIRM
+  c pending_run_id/pending_vacancy_id → превью «N кандидатов, ~цена, ок?».
+- `on_text`: ветка WAITING_RESCREEN_CONFIRM → confirm-слово → `_run_rescreen_task`.
+
+**ГРАБЛЯ — `raw_profile_json` читается как СТРОКА, не dict.**
+- Pool создан **без jsonb-codec** (`db/client.py:DB.connect` — просто
+  `asyncpg.create_pool(dsn=...)`). Значит при чтении `candidates.raw_profile_json`
+  (JSONB) asyncpg вернёт **JSON-строку**, не dict.
+- В `run_rescreen` для каждого candidate нужно
+  `profile = json.loads(cand["raw_profile_json"])` перед передачей в
+  `screen_candidates`. Набросок ниже («JSONB → dict в asyncpg») — НЕВЕРЕН.
+- Альтернатива: один раз поставить codec в `DB.connect`
+  (`set_type_codec('jsonb', encoder=json.dumps, decoder=json.loads, schema='pg_catalog')`)
+  — но это меняет поведение всех чтений, проверить что не сломает existing.
+  Безопаснее локальный `json.loads` в rescreen.
+
+**`screen_candidates` уже отдаёт готовые `db_rows`.**
+- НЕ маппить `recommendation → ai_status` руками (как в наброске
+  `_ai_status(result["recommendation"])` — такой функции нет в pipelines.py).
+- `screen_candidates(...)["db_rows"]` содержит `ai_status/ai_score/ai_comment`
+  уже посчитанные (`_ai_status_from_recommendation` внутри core/screen_runner).
+- Переиспользовать существующий `_persist_screenings(db, vacancy_id, run_id,
+  user_id, profiles, db_rows)` из pipelines.py. Он зовёт `upsert_candidate` —
+  для rescreen это лишний (кандидаты уже в БД), но **безвреден**
+  (ON CONFLICT обновит last_seen_at). Решить при реализации: переиспользовать
+  как есть (меньше кода) или ветка без upsert.
+
+**Тесты** (`tests/test_handlers_advanced.py`): candidate своё/чужое,
+rescreen confirm-флоу (превью → ок → прогон с замоканным OpenAI),
+rescreen access-denied. Моки Telegram — как в `tests/test_handlers_listing.py`
+(там же паттерн второго whitelisted-юзера 999000 для access-тестов).
+
+---
+
+## ↓↓↓ ИСХОДНЫЙ НАБРОСОК (частично устарел — см. решения выше) ↓↓↓
 
 > Зависит от: step_10
 > Статус: [ ] pending

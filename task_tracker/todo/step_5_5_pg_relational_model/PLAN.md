@@ -38,18 +38,26 @@ PG без изменений в логике, потом новая модель
 | 8  | step_8_client_crud_new_tables.md                  | 2    | [x]    |
 | 9  | step_9_pipelines_to_new_model.md                  | 2    | [x]    |
 | 10 | step_10_bot_commands_vacancies_runs.md            | 2    | [x]    |
-| 11 | step_11_bot_commands_candidate_rescreen.md        | 2    | [ ]    |
+| 11 | ~~step_11~~ → backlog/step_11_candidate_rescreen.md | 2  | [~]    |
 | 11.5 | step_11_5_locations_in_apify.md                 | 2    | [ ]    |
 | 12 | step_12_phase2_e2e.md                             | 2    | [ ]    |
 | 13 | step_13_completion.md                             | 2    | [ ]    |
 
-> **Решение 2026-06-26 (новое окно):** `/replay_search` вынесена в
-> `task_tracker/backlog/step_5_backlog.md` — сначала закрываем базовые
-> read-only команды и locations-фикс, гоняем e2e, реплеи улучшаем потом.
-> step_10 = 3 команды (`/vacancies`, `/vacancy <id>`, `/runs`).
-> Добавлен step_11.5: locations из JD в Apify-запрос (баг качества выдачи,
-> подтверждён на step_6/12 e2e). Resume-from-disk ключ остаётся в бэклоге —
-> перед e2e чистим `data/sessions/*` руками.
+> **Решения 2026-06-26 (новое окно):**
+> - `/replay_search` вынесена в `task_tracker/backlog/step_5_backlog.md`.
+>   step_10 = 3 команды (`/vacancies`, `/vacancy <id>`, `/runs`) — **done**.
+> - **step_11 (`/candidate` + `/rescreen`) перенесён в backlog**
+>   (`task_tracker/backlog/step_11_candidate_rescreen.md`) — решение Рената
+>   «сначала базовые кейсы + locations, погонять, потом вернуться». Файл
+>   содержит все решения и тех-находки (JSONB читается как строка, db_rows
+>   готовы, confirm через новый шаг state-машины + миграция 004).
+> - Добавлен step_11.5: locations из JD в Apify-запрос (баг качества выдачи,
+>   подтверждён на step_6/12 e2e).
+> - Resume-from-disk ключ остаётся в бэклоге — перед e2e чистим
+>   `data/sessions/*` руками.
+>
+> **Текущий остаток фазы 2:** step_11.5 → step_12 (e2e) → step_13
+> (completion). step_11 закрывается уже из backlog, после e2e.
 
 ## Критерии готовности всего плана
 
@@ -58,11 +66,11 @@ PG без изменений в логике, потом новая модель
 - [ ] Новые таблицы: companies, vacancies, candidates, searches, candidate_screenings — заполняются корректно
 - [ ] Один LinkedIn-профиль = одна строка в `candidates` (даже после нескольких прогонов)
 - [ ] Каждая `vacancy` хранит историю `searches` (boolean'ов)
-- [ ] Команда `/vacancies` отдаёт список вакансий пользователя
-- [ ] Команда `/candidate <linkedin_url>` показывает историю скринингов человека по разным вакансиям
-- [ ] Команда `/rescreen <run_id> <new_vacancy_id>` гонит существующих кандидатов на новой вакансии без Apify
+- [x] Команда `/vacancies` отдаёт список вакансий пользователя (step_10)
+- [~] Команда `/candidate <linkedin_url>` — **вынесена в backlog** (step_11 → backlog, 2026-06-26)
+- [~] Команда `/rescreen <run_id> <new_vacancy_id>` — **вынесена в backlog** (step_11 → backlog, 2026-06-26)
 - [~] Команда `/replay_search <search_id>` — **вынесена в backlog** (2026-06-26)
-- [ ] `replies.PIPELINE_DONE` показывает "X из 25 кандидатов уже видели по другим вакансиям"
+- [x] `replies.PIPELINE_DONE` показывает "X уже видели на других вакансиях" (step_10)
 - [ ] Locations из JD прокидываются в Apify-запрос (step_11.5)
 - [ ] SQLite-зависимости полностью удалены (нет import sqlite3 в коде)
 - [ ] `db/migrations/` содержит обе миграции (001_initial_pg, 002_relational_model)
