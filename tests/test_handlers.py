@@ -181,7 +181,10 @@ async def test_text_in_waiting_input_creates_vacancy_and_pending_boolean(
     update = FakeUpdate(uid=whitelisted, text="Senior Python role")
 
     async def fake_generate_boolean(input_text, brief_text, pipeline_type):
-        return "(\"Python\") AND (\"Senior\")"
+        return (
+            "(\"Python\") AND (\"Senior\")",
+            {"locations": ["Germany"], "experience": ["6-10"]},
+        )
     monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_generate_boolean)
 
     await handlers.on_text(update, FakeContext(db))
@@ -191,6 +194,11 @@ async def test_text_in_waiting_input_creates_vacancy_and_pending_boolean(
     assert session["vacancy_id"] is not None
     assert session["search_id"] is None  # not yet — created on confirm
     assert session["pending_boolean"] == "(\"Python\") AND (\"Senior\")"
+    # step_11.5: parsed Apify params stashed as a draft until confirm.
+    pending_params = session["pending_apify_params"]
+    if isinstance(pending_params, str):
+        pending_params = json.loads(pending_params)
+    assert pending_params == {"locations": ["Germany"], "experience": ["6-10"]}
 
     vacancy = await db.get_vacancy(session["vacancy_id"])
     assert vacancy["source"] == "manual"
@@ -208,7 +216,7 @@ async def test_confirm_word_creates_search_unchanged(
     sid = await db.create_session(whitelisted, "vacancy_to_candidates")
 
     async def fake_gen(*a, **k):
-        return "(Python)"
+        return "(Python)", {"locations": ["Germany"], "experience": []}
     monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_gen)
     # Block the background pipeline kick-off so it doesn't run for real.
     monkeypatch.setattr(handlers, "_kick_off_pipeline", lambda *a, **k: None)
@@ -225,11 +233,17 @@ async def test_confirm_word_creates_search_unchanged(
     session = await db.get_session(sid)
     assert session["step"] == SessionStep.RUNNING.value
     assert session["pending_boolean"] is None
+    assert session["pending_apify_params"] is None  # cleared on confirm
     assert session["search_id"] is not None
     search = await db.get_search(session["search_id"])
     assert search["boolean_text"] == "(Python)"
     assert search["original_boolean"] is None
     assert search["vacancy_id"] == session["vacancy_id"]
+    # step_11.5: params moved from the session draft into the committed search.
+    stored_params = search["apify_params"]
+    if isinstance(stored_params, str):
+        stored_params = json.loads(stored_params)
+    assert stored_params == {"locations": ["Germany"], "experience": []}
 
 
 async def test_edited_boolean_creates_search_with_original(
@@ -241,7 +255,7 @@ async def test_edited_boolean_creates_search_with_original(
     await db.create_session(whitelisted, "vacancy_to_candidates")
 
     async def fake_gen(*a, **k):
-        return "(Python)"
+        return "(Python)", {"locations": [], "experience": []}
     monkeypatch.setattr(handlers.pipelines, "generate_boolean", fake_gen)
     monkeypatch.setattr(handlers, "_kick_off_pipeline", lambda *a, **k: None)
 

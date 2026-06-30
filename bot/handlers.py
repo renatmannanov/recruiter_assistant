@@ -11,6 +11,7 @@ Wiring:
 """
 
 import asyncio
+import json
 import logging
 
 from telegram import Update
@@ -242,17 +243,25 @@ async def _generate_boolean_and_advance(
         brief_text=brief_text,
         created_by_user_id=user_id,
     )
-    boolean = await pipelines.generate_boolean(
+    boolean, apify_params = await pipelines.generate_boolean(
         input_text, brief_text, session["pipeline_type"]
     )
     await db.update_session(
         session_id,
         vacancy_id=vacancy_id,
         pending_boolean=boolean,
+        pending_apify_params=json.dumps(apify_params),
         step=SessionStep.WAITING_BOOLEAN_CONFIRM.value,
     )
+    locations = apify_params.get("locations") or []
+    locations_block = (
+        replies.LOCATIONS_LINE.format(locations=", ".join(locations))
+        if locations else ""
+    )
     await say(
-        replies.BOOLEAN_GENERATED.format(boolean=boolean),
+        replies.BOOLEAN_GENERATED.format(
+            boolean=boolean, locations=locations_block
+        ),
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -295,16 +304,26 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             boolean = text.strip()
             original = pending if pending != boolean else None
+        # Apify params (locations/experience) were parsed from the JD at
+        # generation time and stashed in the session. They belong to the JD,
+        # not the boolean string, so a user edit of the boolean keeps them.
+        # asyncpg returns JSONB as str — decode before handing back to
+        # create_search (which re-serializes).
+        pending_params = session["pending_apify_params"]
+        if isinstance(pending_params, str):
+            pending_params = json.loads(pending_params)
         search_id = await db.create_search(
             vacancy_id=session["vacancy_id"],
             boolean_text=boolean,
             original_boolean=original,
+            apify_params=pending_params,
             created_by_user_id=user_id,
         )
         await db.update_session(
             session["id"],
             search_id=search_id,
             pending_boolean=None,
+            pending_apify_params=None,
             step=SessionStep.RUNNING.value,
         )
         await _reply(update, replies.PIPELINE_STARTED)

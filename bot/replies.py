@@ -31,8 +31,13 @@ ASK_FOR_CV_INPUT = (
 BOOLEAN_GENERATED = (
     "Сгенерил boolean:\n\n"
     "```\n{boolean}\n```\n\n"
+    "{locations}"
     "Если ОК — ответь 'ок'. Если нужно поправить — пришли исправленный вариант."
 )
+
+# Filled into BOOLEAN_GENERATED's {locations} slot when the LLM gave locations;
+# otherwise the slot is "". Trailing blank line separates it from the prompt.
+LOCATIONS_LINE = "📍 Локации: {locations}\n\n"
 
 PIPELINE_STARTED = (
     "Запускаю поиск... обычно 1-2 минуты, для CV→jobs до 3 минут."

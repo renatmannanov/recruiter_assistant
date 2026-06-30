@@ -25,6 +25,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from core.boolean_generator.generator import (
+    extract_apify_params,
     extract_boolean,
     generate_boolean_search,
 )
@@ -46,14 +47,17 @@ _PIPELINE_CV = "cv_to_jobs"
 
 async def generate_boolean(
     input_text: str, brief_text: str | None, pipeline_type: str,
-) -> str:
-    """JD/CV text -> a single boolean query string.
+) -> tuple[str, dict]:
+    """JD/CV text -> (boolean query string, apify params dict).
 
     For vacancy_to_candidates the LLM returns markdown with multiple sections;
-    we extract just the boolean line — that's what discover.py needs.
+    we extract the boolean line (discover.py needs it) AND the '## Apify params'
+    block (locations/experience — step_11.5). params is
+    {"locations": [...], "experience": [...]}; empty lists when the LLM emitted
+    nothing usable (treated downstream as "no filter").
 
     cv_to_jobs (target=jobs) requires a parsed CV. Step_6 wires it in;
-    until then the bot still returns a usable placeholder.
+    until then the bot still returns a usable placeholder (with empty params).
     """
     if pipeline_type == _PIPELINE_VACANCY:
         target = "candidates"
@@ -62,10 +66,11 @@ async def generate_boolean(
         # target='jobs'. For now keep the step_4-style stub so the bot flow
         # works end-to-end without crashing.
         has_brief = " (+brief)" if brief_text else ""
-        return (
+        boolean = (
             f'("Senior Engineer" OR "Lead") AND (Python) '
             f'— STUB for {pipeline_type}{has_brief}'
         )
+        return boolean, {"locations": [], "experience": []}
     else:
         raise ValueError(f"unknown pipeline_type: {pipeline_type!r}")
 
@@ -75,7 +80,7 @@ async def generate_boolean(
         source_text=input_text,
         brief=brief_text,
     )
-    return extract_boolean(markdown)
+    return extract_boolean(markdown), extract_apify_params(markdown)
 
 
 # --------------------------------------------------------------- pipeline
