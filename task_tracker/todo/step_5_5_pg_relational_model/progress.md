@@ -509,3 +509,70 @@ e2e через Telegram подтверждён. Следующее — фаза 
 - **Итог: 117 passed, 0 skipped** (было 107).
 - Smoke-старт бота чистый (БД подключилась, polling пошёл).
 - **Коммит**: `feat(bot): step 5.5.10 — listing commands`.
+
+### step_11.5 (2026-06-30, новое окно)
+
+Баг: JD с "Germany" → кандидаты из всех стран. Locations терялись между
+LLM-выводом и Apify. **Низ цепочки уже был готов** (`discover_candidates`
+принимал `locations`, `from_apify_search` пробрасывал в Apify) — не хватало
+парсинга + проброса середины.
+
+**Решения с Ренатом перед стартом:**
+- Парсим locations + experience, сохраняем оба в JSONB, но в Apify прокидываем
+  **только locations** (experience — на будущий шаг).
+- Хранение в `searches`, JSONB-колонка, **миграция 004** (не 005 — промпт
+  ошибался: step_11 ушёл в backlog вместе со своей миграцией 004, 003 была
+  последней применённой).
+- Показываем локации юзеру в `BOOLEAN_GENERATED`.
+- Редактирование params юзером — НЕ в этом шаге.
+- JSONB = очищенные списки (experience валидируется по множеству).
+
+**Всплывшая развилка (решена → вариант A):** params парсятся при генерации
+boolean, а нужны на confirm (где создаётся `searches`). Между ними бот может
+рестартнуть → память не годится, markdown потерян. Решение — транзиентная
+колонка `sessions.pending_apify_params` (точное зеркало `pending_boolean` из
+миграции 003). Чистится на confirm. **Поэтому миграция 004 добавила ДВЕ
+колонки**: `searches.apify_params` + `sessions.pending_apify_params`.
+
+**Сделано (4 коммита):**
+- **11.5a** (`bd51c18`): `extract_apify_params()` в `generator.py` рядом с
+  `extract_boolean()` + 10 тестов. Защитный: нет блока / мусор / пусто →
+  пустые списки, никогда не падает.
+- **11.5b** (`d143ae7`): миграция 004 + `schema.sql` + `create_search`
+  (kwarg `apify_params`, `$::jsonb` как в `upsert_candidate`) + guard
+  `_COLUMNS["sessions"]`.
+- **11.5c** (`53939a0`): `generate_boolean()` теперь возвращает
+  `(boolean, params)`; handler кладёт params в `pending_apify_params`,
+  переносит в `searches.apify_params` на confirm; строка «📍 Локации» в
+  `BOOLEAN_GENERATED`.
+- **11.5d** (`0f75874`): `_run_vacancy_pipeline` читает `apify_params`,
+  передаёт `locations` в `discover_candidates`. NULL/пустой → `None`.
+
+**Грабли:**
+- **`\s` в regex жрёт `\n`.** Первая версия `extract_apify_params` на
+  строке `- locations: ` (пустое значение) матчила значение СЛЕДУЮЩЕЙ строки,
+  потому что `\s*` после `:` проглатывал перевод строки. Фикс: `[^\S\n]*`
+  (только горизонтальные пробелы). Тест `test_empty_locations_value` это
+  поймал.
+- **asyncpg + JSONB:** не сериализует dict автоматически и не кастит str в
+  jsonb. На запись — `json.dumps(...)` + `::jsonb` в SQL. На чтение — возвращает
+  **str**, нужен `json.loads` (паттерн уже был в `test_db_relational.py:133`).
+  `update_session` (generic `**fields`) научили кастить known JSONB-колонки
+  через `_JSONB_SESSION_COLUMNS`.
+- **Params привязаны к JD, не к boolean.** Если юзер редактирует boolean на
+  confirm — params остаются (они из `## Apify params`, не из boolean-строки).
+
+**Тесты:**
+- Новый `tests/test_extract_apify_params.py` — 10 тестов.
+- `test_db_relational.py` +3 (apify_params round-trip, NULL default,
+  pending_apify_params на sessions).
+- `test_handlers.py`: моки `generate_boolean` обновлены на кортеж + проверки
+  draft→committed handoff и очистки на confirm.
+- `test_pipelines_new_model.py` +3 (locations→discover, NULL→None, []→None).
+- **Итог: 133 passed** (было 117 + 16 новых).
+- **Миграция 004 применена на боевой PG** (`python -m db.client --migrate`),
+  обе колонки подтверждены через `information_schema.columns`.
+
+**Не сделано (осознанно, в backlog/будущий шаг):** experience в Apify (лежит в
+JSONB готовый), редактирование params юзером (`WAITING_PARAMS_CONFIRM`),
+exclude_titles/titles/seniority. Ручной TG e2e с реальным Apify — на step_12.

@@ -39,7 +39,7 @@ PG без изменений в логике, потом новая модель
 | 9  | step_9_pipelines_to_new_model.md                  | 2    | [x]    |
 | 10 | step_10_bot_commands_vacancies_runs.md            | 2    | [x]    |
 | 11 | ~~step_11~~ → backlog/step_11_candidate_rescreen.md | 2  | [~]    |
-| 11.5 | step_11_5_locations_in_apify.md                 | 2    | [ ]    |
+| 11.5 | step_11_5_locations_in_apify.md                 | 2    | [x]    |
 | 12 | step_12_phase2_e2e.md                             | 2    | [ ]    |
 | 13 | step_13_completion.md                             | 2    | [ ]    |
 
@@ -71,7 +71,7 @@ PG без изменений в логике, потом новая модель
 - [~] Команда `/rescreen <run_id> <new_vacancy_id>` — **вынесена в backlog** (step_11 → backlog, 2026-06-26)
 - [~] Команда `/replay_search <search_id>` — **вынесена в backlog** (2026-06-26)
 - [x] `replies.PIPELINE_DONE` показывает "X уже видели на других вакансиях" (step_10)
-- [ ] Locations из JD прокидываются в Apify-запрос (step_11.5)
+- [x] Locations из JD прокидываются в Apify-запрос (step_11.5, 2026-06-30)
 - [ ] SQLite-зависимости полностью удалены (нет import sqlite3 в коде)
 - [ ] `db/migrations/` содержит обе миграции (001_initial_pg, 002_relational_model)
 - [ ] Memory нового репо обновлена (новая схема, PG-инфра)
