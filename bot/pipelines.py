@@ -167,6 +167,14 @@ async def _run_vacancy_pipeline(
     if not boolean:
         raise RuntimeError("search has empty boolean_text")
 
+    # step_11.5: location filter parsed from the JD at boolean-generation time.
+    # asyncpg returns JSONB as str; NULL / empty list -> None (no filter, the
+    # pre-11.5 behaviour, so old searches keep working).
+    apify_params = search["apify_params"]
+    if isinstance(apify_params, str):
+        apify_params = json.loads(apify_params)
+    locations = (apify_params or {}).get("locations") or None
+
     sess_dir = _session_dir(data_dir, session_id)
     raw_path = sess_dir / "raw_apify.json"
 
@@ -186,9 +194,12 @@ async def _run_vacancy_pipeline(
             session_id, discover_result["found_count"],
         )
     else:
-        log.info("session %s: discover starting", session_id)
+        log.info(
+            "session %s: discover starting (locations=%s)",
+            session_id, locations,
+        )
         discover_result = await asyncio.to_thread(
-            discover_candidates, boolean=boolean,
+            discover_candidates, boolean=boolean, locations=locations,
         )
         raw_path.write_text(
             json.dumps(discover_result["profiles"], ensure_ascii=False, indent=2),

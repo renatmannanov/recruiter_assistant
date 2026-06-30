@@ -42,7 +42,7 @@ def _screen_row(url: str, name: str, status: str = "pass", score: int = 9) -> di
 
 async def _seed_session(
     db: DB, user_id: int = 999, boolean: str = "(Python)",
-    vacancy_name: str | None = None,
+    vacancy_name: str | None = None, apify_params: dict | None = None,
 ) -> tuple[int, int, int]:
     """Returns (session_id, vacancy_id, run_id) for a session in 'running'."""
     await db.upsert_user(user_id, "Test")
@@ -55,6 +55,7 @@ async def _seed_session(
     )
     search_id = await db.create_search(
         vacancy_id=vid, boolean_text=boolean, created_by_user_id=user_id,
+        apify_params=apify_params,
     )
     await db.update_session(
         sid, vacancy_id=vid, search_id=search_id, step="running",
@@ -132,6 +133,60 @@ async def test_run_creates_candidates_and_screenings(db, tmp_path):
     assert result["skipped_same_vacancy"] == 0
     assert result["go"] == 1
     assert result["skip"] == 1
+
+
+# ---------------------------------------------------- step_11.5 locations
+
+async def test_locations_passed_to_discover(db, tmp_path):
+    """search.apify_params['locations'] must reach discover_candidates."""
+    sid, vid, rid = await _seed_session(
+        db, apify_params={"locations": ["Germany", "Austria"], "experience": []},
+    )
+    profiles = [_profile("https://li/alice", "Alice")]
+    rows = [_screen_row("https://li/alice", "Alice Smith", "pass", 9)]
+    pairs = list(zip(profiles, rows))
+    d_p, s_p, o_p = _patch_apify_openai(profiles, _screen_results(pairs))
+    with d_p, s_p, o_p:
+        await pipelines.run_pipeline(
+            sid, "vacancy_to_candidates",
+            run_id=rid, db=db, data_dir=str(tmp_path),
+        )
+        assert (
+            pipelines.discover_candidates.call_args.kwargs["locations"]
+            == ["Germany", "Austria"]
+        )
+
+
+async def test_null_apify_params_passes_none_locations(db, tmp_path):
+    """A search with no apify_params (old rows) -> locations=None, no crash."""
+    sid, vid, rid = await _seed_session(db)  # apify_params defaults to None
+    profiles = [_profile("https://li/alice", "Alice")]
+    rows = [_screen_row("https://li/alice", "Alice Smith", "pass", 9)]
+    pairs = list(zip(profiles, rows))
+    d_p, s_p, o_p = _patch_apify_openai(profiles, _screen_results(pairs))
+    with d_p, s_p, o_p:
+        await pipelines.run_pipeline(
+            sid, "vacancy_to_candidates",
+            run_id=rid, db=db, data_dir=str(tmp_path),
+        )
+        assert pipelines.discover_candidates.call_args.kwargs["locations"] is None
+
+
+async def test_empty_locations_list_passes_none(db, tmp_path):
+    """An empty locations list -> None (don't send an empty filter to Apify)."""
+    sid, vid, rid = await _seed_session(
+        db, apify_params={"locations": [], "experience": ["6-10"]},
+    )
+    profiles = [_profile("https://li/alice", "Alice")]
+    rows = [_screen_row("https://li/alice", "Alice Smith", "pass", 9)]
+    pairs = list(zip(profiles, rows))
+    d_p, s_p, o_p = _patch_apify_openai(profiles, _screen_results(pairs))
+    with d_p, s_p, o_p:
+        await pipelines.run_pipeline(
+            sid, "vacancy_to_candidates",
+            run_id=rid, db=db, data_dir=str(tmp_path),
+        )
+        assert pipelines.discover_candidates.call_args.kwargs["locations"] is None
 
 
 # ---------------------------------------------------- per-vacancy dedup

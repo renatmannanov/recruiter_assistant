@@ -27,8 +27,9 @@ def discover_candidates(
     Args:
         boolean: LinkedIn boolean query (the contents of boolean.md).
         locations: optional location filter (e.g. ["Germany", "Luxembourg"]).
-            For v1 the bot does not parse locations out of the boolean — it
-            passes None. See BACKLOG.md.
+            The bot parses these from the JD's "## Apify params" block
+            (step_11.5) and passes them through searches.apify_params; None when
+            the LLM gave no usable locations.
         pages: pages of 25 profiles. Default 1.
 
     Returns:
